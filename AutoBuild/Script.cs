@@ -1,13 +1,10 @@
 ﻿/*
- * 
  *  --------------------------------------------------------------------------     
  *     AUTHOR: MrAndrey_ka (Ukraine, Cherkassy) e-mail: andrey.ck.ua@gmail.com
  *     When using and disseminating information about the authorship is obligatory
  *     При использовании и распространении информация об авторстве обязательна
  *  --------------------------------------------------------------------------
  */
-
-
 readonly static System.Globalization.CultureInfo SYS = System.Globalization.CultureInfo.GetCultureInfoByIetfLanguageTag("RU");
 class Translate : Dictionary<String, string>
 {
@@ -118,7 +115,7 @@ void SetAtributes(string arg)
 
 					FindPlane tc; TextPanel tp;
 					if (ind >= 0) { tc = Out[ind]; tp = tc.Plane.Find(x => true); }
-					else if (!Out.FindPanel(x => x.CustomName == param, out tc, out tp)) { Echo($"Панель \"{param}\" еще не установлена"); return; }
+					else if (!Out.FindPanel(x => x.CustomName == p[0], out tc, out tp)) { Echo($"Панель \"{p[0]}\" еще не установлена"); return; }
 
 					TextPlane TecPan;
 					if (tp.Owner == tc)
@@ -153,8 +150,8 @@ void SetAtributes(string arg)
 			case "asm":
 				{
 					int pos;
-					if(!int.TryParse(param, out pos)) {Echo("Требует числовой параметр"); return; }
-					if (pos>= asm.Count) { Echo($"Соишком большое значние, всего {asm.Count} сборщиков"); return; }
+					if (!int.TryParse(param, out pos)) { Echo("Требует числовой параметр"); return; }
+					if (pos >= asm.Count) { Echo($"Соишком большое значние, всего {asm.Count} сборщиков"); return; }
 					if (pos == 0) { return; }
 					asm.Move(pos, 0);
 					Echo(asm[0].CustomName + " установлен основным");
@@ -504,31 +501,6 @@ public bool SetPanel(string param, IMyTextSurfaceProvider txt = null)
 	Out.Add(tecSel);
 	return true;
 }
-/*public void SetPanel(string param, IMyTextSurfaceProvider txt = null)
-				{
-					var p2 = param.Split(':');
-					if (txt == null && p2.Length != 2) { Echo("Ожидается 2 параметра: <отбор>:<шаблон панели>"); return; }
-					var FL2 = ParseMask(p2[0]);
-
-					Abs_Plane tmp;
-					var sl = new Selection(null);
-					if (p2.Length < 2) tmp = new TextPanel(txt);
-					else
-					{
-						int tp = Abs_Plane.TryParse(x => sl.Change(x).FindBlock<IMyTextSurfaceProvider>(GridTerminalSystem), p2[1], out tmp);
-						if (tp > -10) { Echo(tp == -1 ? $"Не найдена панель: \"{sl.Value}\"" : $"Не верный формат шаблона ({tp + 1})"); return; }
-					}
-
-
-					FL2.Find(z => Out.Find(x => x.In(z)) != null);
-
-					var tecSel = Out.Find(x => x.Equals(FL2));//Поиск с такими же настройками
-					if (tecSel != null) Out.Remove(tecSel);
-
-					tecSel = new FindPlane(FL2, tmp);
-					Echo("Установлены панели: " + tecSel.ToString());
-					Out.Add(tecSel);
-				}*/
 bool AddBloc(IMyTerminalBlock X)
 {
 	if (X is IMyAssembler) asm.Add(X as IMyAssembler);
@@ -772,6 +744,8 @@ public class FindList : List<FindItem>
 	}
 }
 
+
+
 public class Abs_Plane
 {
 	public delegate bool AsPanel(IMyTerminalBlock x);
@@ -941,7 +915,7 @@ public class LinePlane : TextPlane
 	public override string ToString() => $"{{InLine:{string.Join(", ", Planes)}}}";
 	public override string ToSave()
 	{
-		var res = new StringBuilder("{" + 2 + ">");
+		var res = new StringBuilder("{2>");
 		var tmp = new List<string>(Planes.Count);
 		Planes.ForEach(x => tmp.Add(x.ToSave()));
 		res.Append(string.Join(";", tmp) + "}");
