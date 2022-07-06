@@ -102,7 +102,13 @@
 					else stb.AppendFormat(SYS, "{0} Не хватает тяги для остановки {1:#,##0.0}", CurDirect, -pow);
 
 					if (!Rul.IsTarget()) stb.AppendLine();
-					else stb.AppendFormat(SYS, "\nTarg:{1} {0}m. ~{2:#,##0.0}c.\n", (MV[0, 3] = Rul.Distance()).ToString("#,##0.0", SYS), Rul.Radius < 1 ? '*' : '@', MV[0, 3] / speed.GetDim(i));
+					else
+					{
+						MV[0, 3] = Rul.Distance();
+						ss = MV[0, 3].ToString("#,##0.0", SYS);
+						if (gr > 0) ss += " (" + Rul.Distance(true).ToString("#,##0.0", SYS) + ")";
+						stb.AppendFormat(SYS, "\nTarg:{1} {0}m. ~{2:#,##0.0}c.\n", ss, Rul.Radius < 1 ? '*' : '@', MV[0, 3] / speed.GetDim(i));
+					}
 
 					switch (CP)
 					{
@@ -223,7 +229,7 @@
 							}
 							break;
 						case 9:// Управление
-						case 10:
+						case 10://Наблюдение
 						case 11:// Контроль
 							if (Rul.IsTarget())
 							{
@@ -246,12 +252,8 @@
 									Beep();
 									break;
 								}
-								/*0 - Гравитация
-								  1 - Эфективная тяга (в м/с)
-								 2 - Эфективная тяга (в м/с) учитывая гравитацию
-								 3 - Время торможения
-								 [0, 3] - Дистанция до цели*/
-								if (dist < 1 && CP == 11) { SetAtributes("show"); break; }
+
+								if (dist < 1 && CP != 9) { stb.AppendLine("<<<< STOP >>>>"); SetAtributes("show"); break; }
 								pow = MV[0, i];
 								if (CP == 9) pow += Trusts.GetSpecThrusts(0, Base6Directions.GetFlippedDirection(CurDirect), x => x.Enabled).GetValues().EffectivePow / Mass;
 
@@ -269,10 +271,7 @@
 									if (CP != 11)
 									{
 										Backward.ForEach(x => x.ThrustOverride = 0);
-										var tt = Trusts.GetSpecThrusts(0, CurDirect, x => x.Enabled, null);
-										tt.ForEach(x => { x.ThrustOverride = 0; x.Enabled = true; });
-										stb.Append("  ld = " + tt.Count);
-										tt.ForEach(x => stb.Append("~" + x.ThrustOverride));
+										Trusts.GetSpecThrusts(0, CurDirect, x => x.Enabled, null).ForEach(x => { x.ThrustOverride = 0; x.Enabled = true; });
 										CP = 11;
 									}
 									stb.Append("\nТоромозим");
@@ -755,7 +754,12 @@
 			int coof = 0;
 			public int KeyWait = 0;
 			public int Coof { get { return coof; } }
-			public double Distance() => Target.Distance(RemCon.GetPosition());
+			public double Distance(bool real = false)
+			{
+				if (Vector3D.IsZero(VGr) || real)
+					return Target.Distance(RemCon.GetPosition());
+				return Vector3D.Reject(Target.Center - RemCon.GetPosition(), RemCon.WorldMatrix.Down).Length();
+			}
 
 			public int CalculateCoof() { return coof = this.Sum(x => x.CubeGrid.GridSizeEnum == MyCubeSize.Large ? 33600 : 448); }
 			public void SetTarget(BoundingBoxD val) { Target = val; Radius = Target.Size.Length() / 2; }

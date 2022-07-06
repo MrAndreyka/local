@@ -160,7 +160,7 @@
 						s.AppendLine(string.Format(SYS, "{0} Y:{1:0.00} P:{2:0.00} R:{3:0.00}", x.CustomName, x.Yaw, x.Pitch, x.Roll));
 				}
 				/*
-				Y:-1,57 P:-1,05 R:0,52 Вертикаль,-Ось,Горизонт*/
+				Y:-1,57 P:-1,05 R:0,52 Вертикаль,Горизонт,-Ось*/
 
 				Echo_(s.ToString());
 			}
