@@ -1,11 +1,11 @@
 ﻿/*
- *  --------------------------------------------------------------------------     
- *     AUTHOR: MrAndrey_ka (Ukraine, Cherkassy) e-mail: andrey.ck.ua@gmail.com
- *     When using and disseminating information about the authorship is obligatory
- *     При использовании и распространении информация об авторстве обязательна
- *  --------------------------------------------------------------------------
- */
- 		static System.Globalization.CultureInfo SYS = System.Globalization.CultureInfo.GetCultureInfoByIetfLanguageTag("RU");
+		 *  --------------------------------------------------------------------------     
+		 *     AUTHOR: MrAndrey_ka (Ukraine, Cherkassy) e-mail: andrey.ck.ua@gmail.com
+		 *     When using and disseminating information about the authorship is obligatory
+		 *     При использовании и распространении информация об авторстве обязательна
+		 *  --------------------------------------------------------------------------
+		 */
+		static System.Globalization.CultureInfo SYS = System.Globalization.CultureInfo.GetCultureInfoByIetfLanguageTag("RU");
 		Program()
 		{
 			try
@@ -246,7 +246,11 @@
 									Beep();
 									break;
 								}
-
+								/*0 - Гравитация
+								  1 - Эфективная тяга (в м/с)
+								 2 - Эфективная тяга (в м/с) учитывая гравитацию
+								 3 - Время торможения
+								 [0, 3] - Дистанция до цели*/
 								if (dist < 1 && CP == 11) { SetAtributes("show"); break; }
 								pow = MV[0, i];
 								if (CP == 9) pow += Trusts.GetSpecThrusts(0, Base6Directions.GetFlippedDirection(CurDirect), x => x.Enabled).GetValues().EffectivePow / Mass;
@@ -290,7 +294,6 @@
 									Backward.ForEach(x => x.ThrustOverridePercentage = coof);
 									stb.Append($"\nW:{ coof * 100:0.00}%");
 								}
-
 							}
 							break;
 						default: break;
@@ -418,7 +421,7 @@
 						case "dist":
 							{
 								Stoped();
-								IMyCameraBlock kam = new Selection("*").FindBlock<IMyCameraBlock>(GridTerminalSystem, x => x.IsActive);
+								IMyCameraBlock kam = Sel("*").FindBlock<IMyCameraBlock>(GridTerminalSystem, x => x.IsActive);
 								if (kam == null) { ShowAndStop($"Не установлена текущая камера " + Right); return; }
 								int dist = 20000;
 								if (!string.IsNullOrWhiteSpace(Right))
@@ -443,7 +446,7 @@
 						case "dist?":
 							{
 								Stoped();
-								IMyCameraBlock kam = new Selection("*").FindBlock<IMyCameraBlock>(GridTerminalSystem, x => x.IsActive);
+								IMyCameraBlock kam = Sel("*").FindBlock<IMyCameraBlock>(GridTerminalSystem, x => x.IsActive);
 								if (kam == null) { ShowAndStop($"Не установлена текущая камера " + Right); return; }
 								int dist = 20000;
 								if (!string.IsNullOrWhiteSpace(Right))
@@ -505,16 +508,16 @@
 
 		void Init(string panel)
 		{
-			RemCon = new Selection("").FindBlock<IMyShipController>(GridTerminalSystem);
+			RemCon = Sel("").FindBlock<IMyShipController>(GridTerminalSystem);
 			if (RemCon == null) { Echo("Блок управления не найден"); return; }
 
-			TP = TextBloc.Parse(new Selection(panel).FindBlock<IMyTextSurfaceProvider>(GridTerminalSystem));
+			TP = TextBloc.Parse(Sel(panel).FindBlock<IMyTextSurfaceProvider>(GridTerminalSystem));
 			if (TP != null) TP.WriteText("");
 			else if ((RemCon as IMyTextSurfaceProvider).SurfaceCount > 0)
 				TP = new TextBloc((RemCon as IMyTextSurfaceProvider), 0);
 
 			var TrL = new List<IMyThrust>();
-			new Selection(null).FindBlocks<IMyThrust>(GridTerminalSystem, TrL);
+			Sel(null).FindBlocks<IMyThrust>(GridTerminalSystem, TrL);
 			if (TrL.Count == 0) { Echo("Не найдены трастеры"); return; }
 
 			AllThrusts.ForEach((x, y) => x.Clear());
@@ -566,7 +569,7 @@
 
 		void Beep()
 		{
-			if (speker == null) speker = new Selection(null).FindBlock<IMySoundBlock>(GridTerminalSystem, x => x.IsSoundSelected);
+			if (speker == null) speker = Sel(null).FindBlock<IMySoundBlock>(GridTerminalSystem, x => x.IsSoundSelected);
 			if (speker != null) speker.Play();
 		}
 
@@ -612,9 +615,9 @@
 			public static float GetProcOverride(double mass, TrustsData.ThrustsValue Thrust)
 			=> (float)(mass / Thrust.EffectivePow);
 
-			public static double GetNexSpeed(double tecSpeed, double Pow)
+			public static double GetNexSpeed(double tecSpeed, double PowSpeed)
 			{
-				var tmp = tecSpeed + Pow;
+				var tmp = tecSpeed + PowSpeed;
 				if (tmp > maxSpeed) tmp = Math.Max(tecSpeed, maxSpeed);
 				return tmp;
 			}
@@ -888,7 +891,6 @@
 
 		}
 
-
 		public class Selection
 		{
 			byte key = 0; string Val;
@@ -947,6 +949,7 @@
 			public void FindBlocks<Type>(IMyGridTerminalSystem TB, List<Type> res, Func<Type, bool> Fp = null) where Type : class
 			{ TB.GetBlocksOfType<Type>(res, x => Complies((x as IMyTerminalBlock)) && (Fp == null || Fp(x))); }
 		}
+		public static Selection Sel(String mask) { return new Selection(mask); }
 		class Timer
 		{
 			readonly MyGridProgram GP;
@@ -1074,7 +1077,6 @@
 				return Vector3D.TryParse(vector, out res);
 			}
 		}
-		public static Selection Sel(String mask) { return new Selection(mask); }
 
 		public class TextBloc
 		{
