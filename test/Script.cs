@@ -11,7 +11,8 @@
 
         const string tag_id = "A_Mes";
         MyIGCMessage? NexMes = null;
-        readonly IMyMessageProvider MesProv;
+        readonly IMyMessageProvider MesBProv;
+        readonly IMyMessageProvider MesUProv;
         readonly Text txt = null;
         readonly IMyRadioAntenna Ant = null;
 
@@ -19,8 +20,10 @@
         {
             try
             {
-                MesProv = IGC.RegisterBroadcastListener(tag_id);
-                MesProv.SetMessageCallback(tag_id);
+                MesBProv = IGC.RegisterBroadcastListener(tag_id);
+                MesBProv.SetMessageCallback(tag_id);
+                MesUProv = IGC.UnicastListener;
+                MesUProv.SetMessageCallback(tag_id);
 
                 string s = null;
                 if (Storage.StartsWith("Antena\n") && Me.TerminalRunArgument != "null")
@@ -28,7 +31,13 @@
                 else if (!string.IsNullOrWhiteSpace(Me.CustomData))
                     s = Me.CustomData;
                 else if (string.IsNullOrWhiteSpace(Me.CustomData))
-                    Me.CustomData += "[LCD]\nName=\nIndex=0\n[Antena]\nName=";
+                    Me.CustomData += "[LCD]\nName=\nIndex=0\n\n[Antena]\nName=\n\n---\n" +
+                        @"send - Отправить всем:Текст
+                        send_to - Отправить:Адресату:Текст
+                        #send_pos - Отправить всем свою позицию
+                        auto - Ответить на BC 1 раз:Текст
+                        auto_all-Отвечать постоянно на BC:Текст
+                        *- BC - BroadCast";
 
                 if (s != null)
                 {
@@ -51,7 +60,10 @@
 
                 if (txt == null) txt = Text.New(Me, 0);
                 if (txt == null) Echo("Что? Нет панели в програмном блоке!");
-                else txt.Surface().ContentType = ContentType.TEXT_AND_IMAGE;
+                else {
+                    txt.Surface().ContentType = ContentType.TEXT_AND_IMAGE;
+                    txt.Surface().WriteText(string.Empty);
+                }
                 Echo("Инициализация завершена " + (txt?.Surface().Name ?? ""));
                 Echo(Ant?.CustomName ?? "");
             }
@@ -59,9 +71,6 @@
             {
                 Echo(e.ToString());
             }
-
-            if (!string.IsNullOrWhiteSpace(Me.CustomData) && !Me.CustomData.EndsWith("---\n"))
-                Me.CustomData += "\n---\n";
         }
 
         void Save()
@@ -82,26 +91,50 @@
         {
             try
             {
-                switch (tpu)
+                if ((tpu & (UpdateType.Trigger | UpdateType.Terminal)) > 0
+                || (tpu & (UpdateType.Mod)) > 0
+                || (tpu & (UpdateType.Script)) > 0)
                 {
-                    case UpdateType.IGC:
-                        GetMessage();
-                        break;
-                    case UpdateType.Once:
-                        SentMessage(null, NexMes.Value.Source);
-                        break;
-                    default:
-                        {
-                            var fparam = getToNext(ref argument, ":").ToLower();
-                            if (fparam == "#send_pos")
-                                SentMessage(MyGPS.GPS(Me.CubeGrid.CustomName, Me.GetPosition()));
-                            else if (fparam == "send")
-                                SentMessage(argument);
-                            else if (fparam == "sendto")
-                                SentMessage(argument, long.Parse(getToNext(ref argument, ":")));
-                        }
-                        break;
+                    var fparam = getToNext(ref argument, ":");
+                    switch (fparam.ToLower())
+                    {
+                        case "#send_pos":
+                            SentMessage(MyGPS.GPS(Me.CubeGrid.CustomName, Me.GetPosition()));
+                            break;
+                        case "send":
+                            SentMessage(argument);
+                            break;
+                        case "send_to":
+                            {
+                                fparam = getToNext(ref argument, ":");
+                                long i;
+                                if (!long.TryParse(fparam, out i))
+                                { Echo("Неверный формат числа"); return; }
+                                SentMessage(argument, i);
+                            }
+                            break;
+                        case "auto":
+                            NexMes = new MyIGCMessage(argument, "wait", 0);
+                            break;
+                        case "auto_all":
+                            NexMes = new MyIGCMessage(argument, "wait", 1);
+                            break;
+                        default:
+                            Echo("Uncown command: " + fparam);
+                            break;
+                    }
                 }
+
+                if ((tpu & UpdateType.IGC) > 0) GetMessage();
+
+                if ((tpu & UpdateType.Update10) >0 )
+                {
+                    SentMessage(NexMes.Value.As<string>(), NexMes.Value.Source);
+                    Runtime.UpdateFrequency = UpdateFrequency.None;
+                    NexMes = null;
+                    Ant.Enabled = false;
+                }
+                
             }
             catch (Exception e)
             {
@@ -111,9 +144,27 @@
 
         void GetMessage()
         {
-            var mes_ = MesProv.AcceptMessage();
-            string mes = $"{mes_.Tag}:  {mes_.As<string>()} << {mes_.Source}";
-            SetTxt("<<" + mes);
+            while (MesBProv.HasPendingMessage)
+            {
+                var mes_ = MesBProv.AcceptMessage();
+                string mes = $"{mes_.As<string>()}:{mes_.Source}/{mes_.Tag}\t;";
+                SetTxt("<B:" + mes);
+                if (NexMes.HasValue && NexMes.Value.Tag == "wait")
+                    if (!IGC.IsEndpointReachable(mes_.Source))
+                        SetTxt("!!Не достижима: " + mes_.Source);
+                    else
+                    {
+                        SentMessage(NexMes.Value.As<string>(), mes_.Source);
+                        if (NexMes.Value.Source == 0) NexMes = null;
+                    }
+                     
+            }
+            while (MesUProv.HasPendingMessage)
+            {
+                var mes_ = MesUProv.AcceptMessage();
+                string mes = $"{mes_.As<string>()}:{mes_.Source}/{mes_.Tag}\t;";
+                SetTxt("<U:" + mes);
+            }
         }
 
         void SentMessage(string mes, long address = 0)
@@ -121,28 +172,26 @@
             if (Ant != null && !Ant.Enabled)
             {
                 Ant.Enabled = true;
-                Runtime.UpdateFrequency = UpdateFrequency.Once;
+                Runtime.UpdateFrequency = UpdateFrequency.Update10;
                 NexMes = new MyIGCMessage(mes, tag_id, address);
                 return;
             }
-            if(address == 0)
-                IGC.SendBroadcastMessage(tag_id, mes ?? NexMes.Value.Data);
-            else IGC.SendUnicastMessage(address, tag_id, mes ?? NexMes.Value.Data);
-            if (mes == null) Ant.Enabled = true;
-            SetTxt(">>" + mes);
+            if(address == 0) IGC.SendBroadcastMessage(tag_id, mes);
+            else IGC.SendUnicastMessage(address, tag_id, mes);
+            SetTxt((address == 0? ">B:": ">U:") + mes);
         }
 
         void SetTxt(string mes)
         {
-            Me.CustomData += "\n" + mes;
             if (txt == null) return;
 
             var txs = txt.Surface();
             StringBuilder nw = new StringBuilder();
-            txs.ReadText(nw, true);
+            txs.ReadText(nw, false);
 
             var sz = txs.MeasureStringInPixels(nw, txs.Font, txs.FontSize);
-            if (sz.Y <= txs.SurfaceSize.Y + txs.TextPadding) txs.WriteText("\n" + mes, true);
+            if (nw.Length > 0 && sz.Y <= txs.SurfaceSize.Y + txs.TextPadding) 
+                txs.WriteText("\n" + mes, true);
             else txs.WriteText(mes);
         }
 
@@ -154,7 +203,7 @@
             else
             {
                 fparam = Str.Substring(0, ind);
-                Str.Remove(0, ind + 1);
+                Str = Str.Remove(0, ind + 1);
             }
             return fparam;
         }

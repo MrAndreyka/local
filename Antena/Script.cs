@@ -10,18 +10,20 @@
         }
 
         const string tag_id = "A_Mes";
-        string NexMes = null;
-        readonly IMyMessageProvider MesProv;
+        MyIGCMessage? NexMes = null;
+        readonly IMyMessageProvider MesBProv;
+        readonly IMyMessageProvider MesUProv;
         readonly Text txt = null;
-        readonly IMyRadioAntenna Ant=null;
+        readonly IMyRadioAntenna Ant = null;
 
         Program()
         {
-            
             try
             {
-                MesProv = IGC.RegisterBroadcastListener(tag_id);
-                MesProv.SetMessageCallback(tag_id);
+                MesBProv = IGC.RegisterBroadcastListener(tag_id);
+                MesBProv.SetMessageCallback(tag_id);
+                MesUProv = IGC.UnicastListener;
+                MesUProv.SetMessageCallback(tag_id);
 
                 string s = null;
                 if (Storage.StartsWith("Antena\n") && Me.TerminalRunArgument != "null")
@@ -29,7 +31,12 @@
                 else if (!string.IsNullOrWhiteSpace(Me.CustomData))
                     s = Me.CustomData;
                 else if (string.IsNullOrWhiteSpace(Me.CustomData))
-                    Me.CustomData += "[LCD]\nName=\nIndex=0\n[Antena]\nName=";
+                    Me.CustomData += "[LCD]\nName=\nIndex=0\n\n[Antena]\nName=\n---\n\n" +
+@"send - Отправить BC:Текст
+send_to - Отправить UC:Адресат:Текст
+#send_pos - Отправить BC свою позицию
+auto - Ответить на BC 1 раз:Текст
+auto_all-Отвечать на BC постоянно:Текст";
 
                 if (s != null)
                 {
@@ -52,7 +59,10 @@
 
                 if (txt == null) txt = Text.New(Me, 0);
                 if (txt == null) Echo("Что? Нет панели в програмном блоке!");
-                else txt.Surface().ContentType = ContentType.TEXT_AND_IMAGE;
+                else {
+                    txt.Surface().ContentType = ContentType.TEXT_AND_IMAGE;
+                    txt.Surface().WriteText(string.Empty);
+                }
                 Echo("Инициализация завершена " + (txt?.Surface().Name ?? ""));
                 Echo(Ant?.CustomName ?? "");
             }
@@ -60,9 +70,6 @@
             {
                 Echo(e.ToString());
             }
-
-            if (!string.IsNullOrWhiteSpace(Me.CustomData) && !Me.CustomData.EndsWith("---\n"))
-                Me.CustomData += "\n---\n";
         }
 
         void Save()
@@ -71,11 +78,11 @@
             _ini.AddSection("LCD");
             _ini.Set("LCD", "Name", (txt?.owner as IMyTerminalBlock)?.CustomName ?? "");
             _ini.Set("LCD", "Index", txt?.ind ?? 0);
-            
-            _ini.AddSection("Antena");
-            _ini.Set("Antena", "Name",  (Ant as IMyTerminalBlock)?.CustomName ?? "");
 
-            Storage = $"Antena\n"+ _ini.ToString();
+            _ini.AddSection("Antena");
+            _ini.Set("Antena", "Name", (Ant as IMyTerminalBlock)?.CustomName ?? "");
+
+            Storage = $"Antena\n" + _ini.ToString();
         }
 
         // ---------------------------------- MAIN ---------------------------------------------
@@ -83,24 +90,50 @@
         {
             try
             {
-                switch (tpu)
+                if ((tpu & (UpdateType.Trigger | UpdateType.Terminal)) > 0
+                || (tpu & (UpdateType.Mod)) > 0
+                || (tpu & (UpdateType.Script)) > 0)
                 {
-                    case UpdateType.IGC:
-                        GetMessage();
-                        break;
-                    case UpdateType.Once:
-                        SentMessage(null);
-                        break;
-                    default:
-                        {
-                            var prs = argument.Split(':');
-                            if (prs[0] == "#send_pos")
-                                SentMessage(MyGPS.GPS(Me.CubeGrid.CustomName, Me.GetPosition()));
-                            else if (argument.StartsWith("send:"))
-                                SentMessage(prs.Length> 1? prs[1]: "");
-                        }
-                        break;
+                    var fparam = getToNext(ref argument, ":");
+                    switch (fparam.ToLower())
+                    {
+                        case "#send_pos":
+                            SentMessage(MyGPS.GPS(Me.CubeGrid.CustomName, Me.GetPosition()));
+                            break;
+                        case "send":
+                            SentMessage(argument);
+                            break;
+                        case "send_to":
+                            {
+                                fparam = getToNext(ref argument, ":");
+                                long i;
+                                if (!long.TryParse(fparam, out i))
+                                { Echo("Неверный формат числа"); return; }
+                                SentMessage(argument, i);
+                            }
+                            break;
+                        case "auto":
+                            NexMes = new MyIGCMessage(argument, "wait", 0);
+                            break;
+                        case "auto_all":
+                            NexMes = new MyIGCMessage(argument, "wait", 1);
+                            break;
+                        default:
+                            Echo("Uncown command: " + fparam);
+                            break;
+                    }
                 }
+
+                if ((tpu & UpdateType.IGC) > 0) GetMessage();
+
+                if ((tpu & UpdateType.Update10) >0 )
+                {
+                    SentMessage(NexMes.Value.As<string>(), NexMes.Value.Source);
+                    Runtime.UpdateFrequency = UpdateFrequency.None;
+                    NexMes = null;
+                    Ant.Enabled = false;
+                }
+                
             }
             catch (Exception e)
             {
@@ -110,38 +143,68 @@
 
         void GetMessage()
         {
-            var mes_ = MesProv.AcceptMessage();
-            string mes = $"{mes_.Tag}:  {mes_.As<string>()} << {mes_.Source}";
-            SetTxt("<<" + mes);
+            while (MesBProv.HasPendingMessage)
+            {
+                var mes_ = MesBProv.AcceptMessage();
+                string mes = $"{mes_.As<string>()}:{mes_.Source}/{mes_.Tag}\t;";
+                SetTxt("<B:" + mes);
+                if (NexMes.HasValue && NexMes.Value.Tag == "wait")
+                    if (!IGC.IsEndpointReachable(mes_.Source))
+                        SetTxt("!!Не достижима: " + mes_.Source);
+                    else
+                    {
+                        SentMessage(NexMes.Value.As<string>(), mes_.Source);
+                        if (NexMes.Value.Source == 0) NexMes = null;
+                    }
+                     
+            }
+            while (MesUProv.HasPendingMessage)
+            {
+                var mes_ = MesUProv.AcceptMessage();
+                string mes = $"{mes_.As<string>()}:{mes_.Source}/{mes_.Tag}\t;";
+                SetTxt("<U:" + mes);
+            }
         }
 
-        void SentMessage(string mes)
+        void SentMessage(string mes, long address = 0)
         {
-            if (Ant != null && !Ant.Enabled) 
+            if (Ant != null && !Ant.Enabled)
             {
                 Ant.Enabled = true;
-                Runtime.UpdateFrequency = UpdateFrequency.Once;
-                NexMes = mes;
+                Runtime.UpdateFrequency = UpdateFrequency.Update10;
+                NexMes = new MyIGCMessage(mes, tag_id, address);
                 return;
             }
-            IGC.SendBroadcastMessage(tag_id, mes ?? NexMes, TransmissionDistance.AntennaRelay);
-            if (mes == null) Ant.Enabled = true;
-            SetTxt(">>" + mes);
+            if(address == 0) IGC.SendBroadcastMessage(tag_id, mes);
+            else IGC.SendUnicastMessage(address, tag_id, mes);
+            SetTxt((address == 0? ">B:": ">U:") + mes);
         }
 
         void SetTxt(string mes)
         {
-            Me.CustomData += mes;
             if (txt == null) return;
 
             var txs = txt.Surface();
-
             StringBuilder nw = new StringBuilder();
-            txs.ReadText(nw, true);
+            txs.ReadText(nw, false);
 
             var sz = txs.MeasureStringInPixels(nw, txs.Font, txs.FontSize);
-            if (sz.Y <= txs.SurfaceSize.Y + txs.TextPadding) txs.WriteText("\n" + mes, true);
+            if (nw.Length > 0 && sz.Y <= txs.SurfaceSize.Y + txs.TextPadding) 
+                txs.WriteText("\n" + mes, true);
             else txs.WriteText(mes);
+        }
+
+        string getToNext(ref string Str, string val) 
+        {
+            string fparam = null;
+            var ind = Str.IndexOf(val);
+            if (ind < 0) { fparam = Str; Str = null; }
+            else
+            {
+                fparam = Str.Substring(0, ind);
+                Str = Str.Remove(0, ind + 1);
+            }
+            return fparam;
         }
 
         public static class MyGPS
