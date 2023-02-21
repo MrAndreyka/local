@@ -151,7 +151,7 @@ void SetAtributes(string arg)
 				{ 
 					int pos; 
 					if (!int.TryParse(param, out pos)) { Echo("Требует числовой параметр"); return; } 
-					if (pos >= asm.Count) { Echo($"Соишком большое значние, всего {asm.Count} сборщиков"); return; } 
+					if (pos >= asm.Count) { Echo($"Слишком большое значние, всего {asm.Count} сборщиков"); return; } 
 					if (pos == 0) { return; } 
 					asm.Move(pos, 0); 
 					Echo(asm[0].CustomName + " установлен основным"); 
@@ -482,7 +482,7 @@ public bool SetPanel(string param, IMyTextSurfaceProvider txt = null)
 	if (txt == null && p2.Length != 2) { Echo("Ожидается 2 параметра: Что:{2>Куда1;Куда2}"); return false; } 
 	var FL2 = ParseMask(p2[0]); 
  
-	Abs_Plane tmp; 
+	Abs_Plane tmp;
 	var sl = new Selection(null); 
 	if (p2.Length < 2) tmp = new TextPanel(txt); 
 	else 

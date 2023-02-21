@@ -15,6 +15,7 @@
         readonly IMyMessageProvider MesUProv;
         readonly Text txt = null;
         readonly IMyRadioAntenna Ant = null;
+        string _on = null, _off = null;
 
         Program()
         {
@@ -31,7 +32,7 @@
                 else if (!string.IsNullOrWhiteSpace(Me.CustomData))
                     s = Me.CustomData;
                 else if (string.IsNullOrWhiteSpace(Me.CustomData))
-                    Me.CustomData += "[LCD]\nName=\nIndex=0\n\n[Antena]\nName=\n---\n\n" +
+                    Me.CustomData += "[LCD]\nName=\nIndex=0\n\n[Antena]\nName=\nOn=\nOff=\n---\n\n" +
 @"send - Отправить BC:Текст
 send_to - Отправить UC:Адресат:Текст
 #send_pos - Отправить BC свою позицию
@@ -52,6 +53,9 @@ auto_all-Отвечать на BC постоянно:Текст";
                     var sp = (GridTerminalSystem.GetBlockWithName(s) as IMyTextSurfaceProvider);
                     if (sp != null) txt = Text.New(sp, v);
                     if (txt == null) Echo($"{s} не удалось получить панель {v}");
+
+                    _on = _ini.Get("Antena", "On").ToString();
+                    _off = _ini.Get("Antena", "Off").ToString();
 
                     s = _ini.Get("Antena", "Name").ToString();
                     Ant = GridTerminalSystem.GetBlockWithName(s) as IMyRadioAntenna;
@@ -81,6 +85,8 @@ auto_all-Отвечать на BC постоянно:Текст";
 
             _ini.AddSection("Antena");
             _ini.Set("Antena", "Name", (Ant as IMyTerminalBlock)?.CustomName ?? "");
+            _ini.Set("Antena", "On", _on);
+            _ini.Set("Antena", "Off", _off);
 
             Storage = $"Antena\n" + _ini.ToString();
         }
@@ -156,13 +162,20 @@ auto_all-Отвечать на BC постоянно:Текст";
                         SentMessage(NexMes.Value.As<string>(), mes_.Source);
                         if (NexMes.Value.Source == 0) NexMes = null;
                     }
-                     
             }
             while (MesUProv.HasPendingMessage)
             {
                 var mes_ = MesUProv.AcceptMessage();
-                string mes = $"{mes_.As<string>()}:{mes_.Source}/{mes_.Tag}\t;";
-                SetTxt("<U:" + mes);
+                string mes = mes_.As<string>(); 
+                SetTxt($"<U:{mes}/{mes_.Source}/{mes_.Tag}\t;");
+
+                if (Ant != null && !string.IsNullOrWhiteSpace(_on) && _on == mes)
+                { Ant.Enabled = true; SetTxt("Антена вкл"); }
+
+                if (Ant != null && !string.IsNullOrWhiteSpace(_off) && _off == mes)
+                { Ant.Enabled = false; SetTxt("Антена выкл"); }
+
+
             }
         }
 

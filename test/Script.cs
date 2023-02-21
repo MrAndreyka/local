@@ -9,12 +9,21 @@
             => (index < 0 || own == null || own.SurfaceCount < index - 1) ? null : new Text(own, index);
         }
 
+        public struct com_ {
+            public string command;
+            public bool brod;
+            public com_(string commandRun, bool brodcust)
+            { command = commandRun; brod = brodcust; }
+
+        }
+
         const string tag_id = "A_Mes";
         MyIGCMessage? NexMes = null;
         readonly IMyMessageProvider MesBProv;
         readonly IMyMessageProvider MesUProv;
         readonly Text txt = null;
         readonly IMyRadioAntenna Ant = null;
+        public Dictionary<String, com_> Coms = new Dictionary<String, com_>();
 
         Program()
         {
@@ -31,13 +40,11 @@
                 else if (!string.IsNullOrWhiteSpace(Me.CustomData))
                     s = Me.CustomData;
                 else if (string.IsNullOrWhiteSpace(Me.CustomData))
-                    Me.CustomData += "[LCD]\nName=\nIndex=0\n\n[Antena]\nName=\n\n---\n" +
-                        @"send - Отправить всем:Текст
-                        send_to - Отправить:Адресату:Текст
-                        #send_pos - Отправить всем свою позицию
-                        auto - Ответить на BC 1 раз:Текст
-                        auto_all-Отвечать постоянно на BC:Текст
-                        *- BC - BroadCast";
+                    Me.CustomData += "[LCD]\nName=\nIndex=0\n\n[Antena]\nName=\n" +
+                        "\n[Comands]\nsend_to=\nantena_on=\nantena_off=\n---\n\n" +
+@"send - Отправить BC:Текст
+send_to - Отправить UC:Адресат:Текст
+#send_pos - Отправить BC свою позицию";
 
                 if (s != null)
                 {
@@ -56,6 +63,20 @@
 
                     s = _ini.Get("Antena", "Name").ToString();
                     Ant = GridTerminalSystem.GetBlockWithName(s) as IMyRadioAntenna;
+
+                    if (_ini.ContainsSection("Comands")) {
+                        var lst = new List<MyIniKey>();
+                        _ini.GetKeys("Comands", lst);
+                        lst.ForEach(x => {
+                            var str = _ini.Get(x).ToString();
+                            if (string.IsNullOrWhiteSpace(str))
+                                return;
+                            else if (str.StartsWith("*"))
+                                Coms.Add(str.Substring(1), new com_(x.Name, true));
+                            else
+                                Coms.Add(str, new com_(x.Name, false));
+                        });
+                    }
                 }
 
                 if (txt == null) txt = Text.New(Me, 0);
@@ -83,6 +104,7 @@
             _ini.AddSection("Antena");
             _ini.Set("Antena", "Name", (Ant as IMyTerminalBlock)?.CustomName ?? "");
 
+
             Storage = $"Antena\n" + _ini.ToString();
         }
 
@@ -99,7 +121,7 @@
                     switch (fparam.ToLower())
                     {
                         case "#send_pos":
-                            SentMessage(MyGPS.GPS(Me.CubeGrid.CustomName, Me.GetPosition()));
+                            Go("send_pos", "");
                             break;
                         case "send":
                             SentMessage(argument);
@@ -142,29 +164,53 @@
             }
         }
 
+        bool Go(string mes, string param) 
+        {
+            switch (mes.ToLower()) 
+            {
+                case "send_pos": {
+                        long tmp; 
+                        long.TryParse(param, out tmp);
+                        SentMessage(MyGPS.GPS(Me.CubeGrid.CustomName, Me.GetPosition()), tmp); }
+                    break;
+                case "antena_on":
+                    { Ant.Enabled = true; SetTxt("Антена вкл"); }
+                    break;
+                case "antena_off":
+                    { Ant.Enabled = false; SetTxt("Антена вкл"); }
+                    break;
+                default: return false;
+            }
+            return true;
+        }
+
         void GetMessage()
         {
             while (MesBProv.HasPendingMessage)
             {
                 var mes_ = MesBProv.AcceptMessage();
-                string mes = $"{mes_.As<string>()}:{mes_.Source}/{mes_.Tag}\t;";
-                SetTxt("<B:" + mes);
-                if (NexMes.HasValue && NexMes.Value.Tag == "wait")
-                    if (!IGC.IsEndpointReachable(mes_.Source))
-                        SetTxt("!!Не достижима: " + mes_.Source);
-                    else
-                    {
-                        SentMessage(NexMes.Value.As<string>(), mes_.Source);
-                        if (NexMes.Value.Source == 0) NexMes = null;
-                    }
-                     
+                var mes = mes_.As<string>();
+                SetTxt($"<B:{mes}:{mes_.Source}/{mes_.Tag}\t;");
+                checkCommand(mes, true);
             }
+
             while (MesUProv.HasPendingMessage)
             {
                 var mes_ = MesUProv.AcceptMessage();
-                string mes = $"{mes_.As<string>()}:{mes_.Source}/{mes_.Tag}\t;";
-                SetTxt("<U:" + mes);
+                var mes = mes_.As<string>(); 
+                SetTxt($"<U:{mes}/{mes_.Source}/{mes_.Tag}\t;");
+                checkCommand(mes, false);
             }
+        }
+
+        void checkCommand(string val, bool brod) 
+        {
+            var par = getToNext(ref val, ":");
+            if (string.IsNullOrWhiteSpace(par)) return;
+            com_ tmp;
+            if (!Coms.TryGetValue(par, out tmp) || tmp.brod != brod) return;
+
+            Go(tmp.command, val);
         }
 
         void SentMessage(string mes, long address = 0)
