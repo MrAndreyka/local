@@ -58,17 +58,18 @@ void SetAtributes(string arg)
 {
 	try
 	{
-		var param = EndCut(ref arg, ":");
+		var parms = new StrPosition(arg, ':');
+		arg = parms.GetNext();
 		switch (arg.ToLower())
 		{
 			case "panels"://Добавление панелей с параметрами в CD панели
 				{
-					if (string.IsNullOrEmpty(param)) { Echo("Ожидается маска для поиска панелей"); return; }
-					var p2 = param.Split(':');
-					for (int i = 0; i < p2.Length; i++)
+					if (parms.Endl()) { Echo("Ожидается маска для поиска панелей"); return; }
+					string param = null;
+					while (parms.GetNext(ref param))
 					{
 						var L = new List<IMyTerminalBlock>();
-						new Selection(p2[i]).FindBlocks(GridTerminalSystem, L, x => x is IMyTextSurfaceProvider && !string.IsNullOrWhiteSpace(x.CustomData));
+						new Selection(param).FindBlocks(GridTerminalSystem, L, x => x is IMyTextSurfaceProvider && !string.IsNullOrWhiteSpace(x.CustomData));
 
 						L.ForEach(L1 =>
 						{
@@ -81,11 +82,11 @@ void SetAtributes(string arg)
 				}
 				break;
 			case "panel":
-				SetPanel(param);
+				SetPanel(parms);
 				break;
 			case "panel-":
 				{
-					var sl = new Selection(param);
+					var sl = new Selection(parms.End());
 					FindPlane fp; TextPanel ap; Abs_Plane tmp; TextPlane tp;
 					var fl = false; var sb = new StringBuilder("Удалены:\n");
 					while (Out.FindPanel(x => sl.Complies(x.CustomName), out fp, out ap))
@@ -99,30 +100,34 @@ void SetAtributes(string arg)
 							tp = (tmp = tp).Owner as TextPlane;
 						}
 					}
-					Echo(fl ? sb.ToString() : $"Панели по маске \"{param}\" не найдены");
+					Echo(fl ? sb.ToString() : $"Панели по маске \"{sl.Value}\" не найдены");
 				}
 				break;
 			case "panel+":
 				{
-					var p = param.Split(':');
-					if (p.Length > 3 || p.Length < 2) { Echo("Ожидается 2-3 параметра: <Индекс шаблона или Название панели>:<Маска поиска добавляемых блоков>:Горизонтальная группа"); return; }
-					int ind = -1;
-					int.TryParse(p[0], out ind);
+					var p = parms.Get(-3);
+					if (p.Length < 2 || !parms.Endl())
+					{ Echo("Ожидается 2-3 параметра: <Индекс шаблона или Название панели>:" +
+						"<Маска поиска добавляемых блоков>:Горизонтальная группа"); return; }
 
 					var L = new List<IMyTextSurfaceProvider>();
 					new Selection(p[1]).FindBlocks(GridTerminalSystem, L);
 					if (L.Count == 0) { Echo($"Панели по шаблону \"{p[1]}\" не найдены"); return; }
 					L.Sort(delegate (IMyTextSurfaceProvider x, IMyTextSurfaceProvider y) { return (x as IMyTerminalBlock).CustomName.CompareTo((y as IMyTerminalBlock).CustomName); });
 
-					FindPlane tc; TextPanel tp;
-					if (ind >= 0) { tc = Out[ind]; tp = tc.Plane.Find(x => true); }
+					FindPlane tc;
+					TextPanel tp;
+					int ind = -1;
+					int.TryParse(p[0], out ind);
+
+					if (p.Length >= 0) { tc = Out[ind]; tp = tc.Plane.Find(x => true); }
 					else if (!Out.FindPanel(x => x.CustomName == p[0], out tc, out tp)) { Echo($"Панель \"{p[0]}\" еще не установлена"); return; }
 
 					TextPlane TecPan;
 					if (tp.Owner == tc)
 					{
 						Out.Remove(tc);
-						tc = new FindPlane(tc, TecPan = new TextPlane(p.Length == 3, tp));
+						tc = new FindPlane(tc, TecPan = new TextPlane(p[2] != "0", tp));
 						Out.Add(tc);
 					}
 					else TecPan = tp.Owner as TextPlane;
@@ -133,9 +138,10 @@ void SetAtributes(string arg)
 			case "rl":
 				{
 					var L = new List<IMyTerminalBlock>();
-					if (string.IsNullOrWhiteSpace(param)) GridTerminalSystem.GetBlocks(L);
-					else if (param.StartsWith("^")) new Selection(param.Substring(1), Me.CubeGrid).FindBlocks(GridTerminalSystem, L);
-					else new Selection(param).FindBlocks(GridTerminalSystem, L);
+					if (parms.Endl()) GridTerminalSystem.GetBlocks(L);
+					else if (parms.StartsWith("^"))
+						new Selection(parms.Seek(1).GetNext()).FindBlocks(GridTerminalSystem, L);
+					else new Selection(parms.GetNext(), Me.CubeGrid).FindBlocks(GridTerminalSystem, L);
 					inv.Clear();
 					asm.Clear();
 					L.ForEach(x => AddBloc(x));
@@ -151,8 +157,8 @@ void SetAtributes(string arg)
 			case "asm":
 				{
 					int pos;
-					if (!int.TryParse(param, out pos)) { Echo("Требует числовой параметр"); return; }
-					if (pos >= asm.Count) { Echo($"Соишком большое значние, всего {asm.Count} сборщиков"); return; }
+					if (!int.TryParse(parms.End(), out pos)) { Echo("Требует числовой параметр"); return; }
+					if (pos >= asm.Count) { Echo($"Слишком большое значние, всего {asm.Count} сборщиков"); return; }
 					if (pos == 0) { return; }
 					asm.Move(pos, 0);
 					Echo(asm[0].CustomName + " установлен основным");
@@ -160,15 +166,15 @@ void SetAtributes(string arg)
 				break;
 			case ">":
 				{
-					if (param.StartsWith("-:"))
+					if (parms.StartsWith("-:"))
 					{
 						var tc = stor.Count;
-						var ss = new Selection(param.Substring(2));
+						var ss = new Selection(parms.Seek(2).End());
 						stor.RemoveAll(x => ss.Complies(x.Inv.ToString()));
 						tc -= stor.Count;
 						Echo(tc == 0 ? "Не найдены блоки по запросу" : $"Удалено {tc} блоков");
 					}
-					else AddStorage(param);
+					else AddStorage(parms.End());
 
 					// Исправляем если нужно типы инвентарей
 					inv.ForEach(delegate (InvData x)
@@ -190,18 +196,18 @@ void SetAtributes(string arg)
 				{
 					bool First = true;
 					var buf = new StringBuilder();
-					var all = string.IsNullOrEmpty(param);
-					if (all || param.Contains("storage"))
+					var all = parms.Endl();
+					if (all || parms.Contains("storage")>=0)
 					{
 						if (!First) buf.AppendLine(); buf.AppendLine("Склады:"); First = false;
 						buf.AppendLine(string.Join("\r\n", stor));
 					}
-					if (all || param.Contains("limit"))
+					if (all || parms.Contains("limit") >= 0)
 					{
 						if (!First) buf.AppendLine(); buf.AppendLine("Лимиты:"); First = false;
 						buf.AppendLine(string.Join("\r\n", Limits));
 					}
-					if (all || param.Contains("bloc"))
+					if (all || parms.Contains("bloc") >= 0)
 					{
 						if (!First) buf.AppendLine(); buf.AppendLine("Инвентари:"); First = false;
 						inv.ForEach(x =>
@@ -211,12 +217,12 @@ void SetAtributes(string arg)
 							else buf.AppendLine(x.ToString());
 						});
 					}
-					if (all || param.Contains("ass"))
+					if (all || parms.Contains("ass") >= 0)
 					{
 						if (!First) buf.AppendLine(); buf.AppendLine("Сборщики:"); First = false;
 						asm.ForEach(x => buf.AppendLine(x.CustomName + (x.CooperativeMode ? "" : " >> основной")));
 					}
-					if (all || param.Contains("panel"))
+					if (all || parms.Contains("panel") >= 0)
 					{
 						if (!First) buf.AppendLine(); buf.AppendLine("Панели:"); First = false;
 						Out.ForEach(x => buf.AppendLine(x.ToString()));
@@ -228,23 +234,24 @@ void SetAtributes(string arg)
 			case "limit+":
 				{
 					int ind, cou;
-					var ts = EndCut(ref param, ":");
-					if (string.IsNullOrWhiteSpace(param)) { Echo("Ожидаются параметры"); return; }
+					parms.GetNext();
+					var ts = parms.End();//EndCut(ref param, ":");
+					if (parms.Endl()) { Echo("Ожидаются параметры"); return; }
 
-					var name = LangDic.Find(x => x.StartsWith(param)).Key;
+					var name = LangDic.Find(x => x.StartsWith(ts)).Key;
 
 					if (name != null) ind = Limits.FindIndex(x => x.Lnk.Name == name);
-					else if (!int.TryParse(param, out ind))
-					{ Echo("Первым параметром ожидается имя элемента или номер в списке лимитов.\nНе удалось опознать: " + param); return; }
+					else if (!int.TryParse(parms.End(), out ind))
+					{ Echo("Первым параметром ожидается имя элемента или номер в списке лимитов.\nНе удалось опознать: " + ts); return; }
 
 					if (ind >= Limits.Count || ind < 0)
 					{
-						Echo($"Не верно указан элемент {param}" +
+						Echo($"Не верно указан элемент {ts}" +
 							"\nИзменить количество возможно только в установленных ранее лимитах, для добавления новых " +
 							"воспользуйтесь сборщиком. Имя которого передайте в команду \"limit\""); return;
 					}
 
-					if (!int.TryParse(ts, out cou)) { Echo("Не верное значения количества"); return; }
+					if (!int.TryParse(parms.Last(), out cou)) { Echo("Не верное значения количества"); return; }
 					var t = Limits[ind];
 					t.count += cou;
 					Limits[ind] = t;
@@ -253,8 +260,8 @@ void SetAtributes(string arg)
 				break;
 			case "limit":
 				{
-					if (string.IsNullOrEmpty(param)) Limits.Clear();
-					else SetLimit(param);
+					if (parms.Endl()) Limits.Clear();
+					else SetLimit(parms.End());
 				}
 				break;
 			case "init":
@@ -266,16 +273,16 @@ void SetAtributes(string arg)
 				break;
 			case "save"://Записывает сосояние
 				{
-					var bl = GridTerminalSystem.GetBlockWithName(param);
+					var bl = GridTerminalSystem.GetBlockWithName(parms.End());
 					bl.CustomData = ToSave();
 					Echo($"Сохранено в {bl.CustomName}.CustomData");
 				}
 				break;
 			case "load"://Считывает сосояние
 				{
-					var bl = GridTerminalSystem.GetBlockWithName(param);
+					var bl = GridTerminalSystem.GetBlockWithName(parms.End());
 					if (bl == null || string.IsNullOrEmpty(bl.CustomData))
-					{ Echo("Не найден блок с параметрами в CustomData: " + param); return; }
+					{ Echo("Не найден блок с параметрами в CustomData: " + parms.End()); return; }
 					Restore(bl.CustomData);
 				}
 				break;
@@ -283,8 +290,8 @@ void SetAtributes(string arg)
 			case "ul":
 				{
 					List<IMyTerminalBlock> l = new List<IMyTerminalBlock>();
-					new Selection(param).FindBlocks(GridTerminalSystem, l, x => x.HasInventory && (!InvData.IsSpecBloc(x) || !x.IsWorking));
-					if (l.Count == 0) { Echo($"Не найдены блоки по запросу: {param}"); return; }
+					new Selection(parms.End()).FindBlocks(GridTerminalSystem, l, x => x.HasInventory && (!InvData.IsSpecBloc(x) || !x.IsWorking));
+					if (l.Count == 0) { Echo($"Не найдены блоки по запросу: {parms.End()}"); return; }
 
 					var Dil = new Dictionary<InvDT, List<MyInvItem>>();
 					l.ForEach(x => Moved(new InvDT(x, (byte)(x.InventoryCount - 1)), ref Dil));
@@ -295,7 +302,7 @@ void SetAtributes(string arg)
 			case "replay":
 				{
 					int i;
-					if (!int.TryParse(param, out i)) { Echo("Неверно указан интервал"); return; }
+					if (!int.TryParse(parms.End(), out i)) { Echo("Неверно указан интервал"); return; }
 					TM.SetInterval(i * 1000, false);
 					Echo(TM.GetInterval().ToString());
 				}
@@ -313,7 +320,6 @@ void SetAtributes(string arg)
 Program()
 {
 	MyIni _ini = new MyIni();
-	_ini.WordCount();
 
 	if (Storage.StartsWith("AutoBuild_2") && Me.TerminalRunArgument != "null")
 		try
@@ -480,19 +486,19 @@ void ShowMoved(Dictionary<InvDT, List<MyInvItem>> Dil)
 	Out.AddText(s.ToString());
 }
 
-public bool SetPanel(string param, IMyTextSurfaceProvider txt = null)
+public bool SetPanel(StrPosition param, IMyTextSurfaceProvider txt = null)
 {
-	var p2 = param.Split(':');
-	if (txt == null && p2.Length != 2) { Echo("Ожидается 2 параметра: Что:{2>Куда1;Куда2}"); return false; }
-	var FL2 = ParseMask(p2[0]);
+	if (param.seperator != ':') param.seperator = ':';
+	if (txt == null && param.Length() != 2) { Echo("Ожидается 2 параметра: Что:{2>Куда1;Куда2}"); return false; }
+	var FL2 = ParseMask(param.GetNext());
 
 	Abs_Plane tmp;
 	var sl = new Selection(null);
-	if (p2.Length < 2) tmp = new TextPanel(txt);
+	if (param.Length() < 2) tmp = new TextPanel(txt);
 	else
 	{
-		int tp = Abs_Plane.TryParse(x => sl.Change(x).FindBlock<IMyTextSurfaceProvider>(GridTerminalSystem), p2[1], out tmp);
-		if (tp > -10) { Echo(tp == -1 ? $"Не найдена панель: \"{sl.Value}\"" : $"Не верный формат шаблона ({tp + 1}) {p2[1]}"); return false; }
+		int tp = Abs_Plane.TryParse(x => sl.Change(x).FindBlock<IMyTextSurfaceProvider>(GridTerminalSystem), param.GetNext(), out tmp);
+		if (tp > -10) { Echo(tp == -1 ? $"Не найдена панель: \"{sl.Value}\"" : $"Не верный формат шаблона ({tp + 1}) {param.Last()}"); return false; }
 	}
 
 	FL2.Find(z => Out.Find(x => x.In(z)) != null);
@@ -505,6 +511,7 @@ public bool SetPanel(string param, IMyTextSurfaceProvider txt = null)
 	Out.Add(tecSel);
 	return true;
 }
+public bool SetPanel(string param, IMyTextSurfaceProvider txt = null) => SetPanel(new StrPosition(param, ':'), txt);
 bool AddBloc(IMyTerminalBlock X)
 {
 	if (X is IMyAssembler) asm.Add(X as IMyAssembler);
@@ -1278,8 +1285,70 @@ class Timer
 	}
 }//ggg
 
-}
-// https://docs.microsoft.com/en-us/dotnet/csharp/programming-guide/classes-and-structs/extension-methods
-static class Class1
+
+bool Between(int val, int min, int max) => val >= min && val <= max;
+public class StrPosition
 {
-    public static void WordCount(this MyIni ini) { }
+    public readonly string str;
+    int pos = 0;
+    char sep;
+
+    public char seperator { get { return sep; } set { sep = value; } }
+
+    public StrPosition(string val, char seperator) { str = val; sep = seperator; }
+
+    public void Break() { pos = 0; }
+    public StrPosition Seek(int val, bool absolute = false)
+    {
+        if (absolute)
+            pos = val < 0 ? str.Length + val : val;
+        else pos += val;
+        if (pos < 0) pos = 0;
+        else if (pos > str.Length) pos = str.Length;
+        return this;
+    }
+    public delegate void errFun(string val);
+    public int? GetNextInt(errFun Fun)
+    {
+        var st = GetNext();
+        int i;
+        if (!int.TryParse(st, out i))
+        { Fun(st); return null; }
+        return i;
+    }
+    public string GetNext()
+    {
+        var oldpos = pos;
+        pos = str.IndexOf(sep, pos);
+        if (pos < 0)
+        {
+            pos = str.Length;
+            return str.Substring(oldpos);
+        }
+        return str.Substring(oldpos, pos++ - oldpos);
+    }
+    public bool GetNext(ref string outstr)
+    { if (Endl()) return false; outstr = GetNext(); return true; }
+    public string[] Get(int size = 0)
+    {
+        if (size == 0) size = Length();
+        else if (size < 0) size = Math.Min(-size, Length());
+        string[] res = new string[size];
+
+        for (int i = 0; i < size; i++)
+            if (Endl()) break;
+            else res[i] = GetNext();
+        return res;
+    }
+
+    public string Last()
+    {
+        var i = 0;
+        return (pos < 2 || (i = str.LastIndexOf(sep, pos - 2)) < 0) ? string.Empty : str.Substring(i, pos - i);
+    }
+    public bool Endl() => pos >= str.Length;
+    public string End(int count = -1) => count < 0 ? str.Substring(pos) : str.Substring(pos, count);
+    public bool StartsWith(string val) => str.IndexOf(val, pos, val.Length) == pos;
+    public int Contains(string val) => str.IndexOf(val, pos);
+    public int Length() => str.Count(x => x == sep) + 1;
+}
