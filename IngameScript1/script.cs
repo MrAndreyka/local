@@ -87,17 +87,17 @@ void SetAtributes(string arg)
 			case "panel-":
 				{
 					var sl = new Selection(parms.End());
-					FindPlane fp; TextPanel ap; Abs_Plane tmp; TextPlane tp;
+					FindFlat fp; TextPanel ap; Abs_Flat tmp; TextFlat tp;
 					var fl = false; var sb = new StringBuilder("Удалены:\n");
 					while (Out.FindPanel(x => sl.Complies(x.CustomName), out fp, out ap))
 					{
 						fl = true;
-						tmp = ap; tp = ap.Owner as TextPlane;
+						tmp = ap; tp = ap.Owner as TextFlat;
 						while (true)
 						{
-							if (tp == null) { sb.AppendLine(tmp.Owner.ToString()); Out.Remove(tmp.Owner as FindPlane); break; }
-							if (tp.Planes.Count > 1) { sb.AppendLine(tmp.ToString()); tp.Planes.Remove(tmp); break; }
-							tp = (tmp = tp).Owner as TextPlane;
+							if (tp == null) { sb.AppendLine(tmp.Owner.ToString()); Out.Remove(tmp.Owner as FindFlat); break; }
+							if (tp.Flats.Count > 1) { sb.AppendLine(tmp.ToString()); tp.Flats.Remove(tmp); break; }
+							tp = (tmp = tp).Owner as TextFlat;
 						}
 					}
 					Echo(fl ? sb.ToString() : $"Панели по маске \"{sl.Value}\" не найдены");
@@ -115,22 +115,22 @@ void SetAtributes(string arg)
 					if (L.Count == 0) { Echo($"Панели по шаблону \"{p[1]}\" не найдены"); return; }
 					L.Sort(delegate (IMyTextSurfaceProvider x, IMyTextSurfaceProvider y) { return (x as IMyTerminalBlock).CustomName.CompareTo((y as IMyTerminalBlock).CustomName); });
 
-					FindPlane tc;
+					FindFlat tc;
 					TextPanel tp;
 					int ind = -1;
 					int.TryParse(p[0], out ind);
 
-					if (p.Length >= 0) { tc = Out[ind]; tp = tc.Plane.Find(x => true); }
+					if (p.Length >= 0) { tc = Out[ind]; tp = tc.Flat.Find(x => true); }
 					else if (!Out.FindPanel(x => x.CustomName == p[0], out tc, out tp)) { Echo($"Панель \"{p[0]}\" еще не установлена"); return; }
 
-					TextPlane TecPan;
+					TextFlat TecPan;
 					if (tp.Owner == tc)
 					{
 						Out.Remove(tc);
-						tc = new FindPlane(tc, TecPan = new TextPlane(p[2] != "0", tp));
+						tc = new FindFlat(tc, TecPan = new TextFlat(p[2] != "0", tp));
 						Out.Add(tc);
 					}
-					else TecPan = tp.Owner as TextPlane;
+					else TecPan = tp.Owner as TextFlat;
 					for (var i = 0; i < L.Count; i++) { TecPan.Add(new TextPanel(L[i])); Echo("+ " + ((IMyTerminalBlock)L[i]).CustomName); }
 				}
 				break;
@@ -492,12 +492,12 @@ public bool SetPanel(StrPosition param, IMyTextSurfaceProvider txt = null)
 	if (txt == null && param.Length() != 2) { Echo("Ожидается 2 параметра: Что:{2>Куда1;Куда2}"); return false; }
 	var FL2 = ParseMask(param.GetNext());
 
-	Abs_Plane tmp;
+	Abs_Flat tmp;
 	var sl = new Selection(null);
 	if (param.Length() < 2) tmp = new TextPanel(txt);
 	else
 	{
-		int tp = Abs_Plane.TryParse(x => sl.Change(x).FindBlock<IMyTextSurfaceProvider>(GridTerminalSystem), param.GetNext(), out tmp);
+		int tp = Abs_Flat.TryParse(x => sl.Change(x).FindBlock<IMyTextSurfaceProvider>(GridTerminalSystem), param.GetNext(), out tmp);
 		if (tp > -10) { Echo(tp == -1 ? $"Не найдена панель: \"{sl.Value}\"" : $"Не верный формат шаблона ({tp + 1}) {param.Last()}"); return false; }
 	}
 
@@ -506,7 +506,7 @@ public bool SetPanel(StrPosition param, IMyTextSurfaceProvider txt = null)
 	var tecSel = Out.Find(x => x.Equals(FL2));//Поиск с такими же настройками
 	if (tecSel != null) Out.Remove(tecSel);
 
-	tecSel = new FindPlane(FL2, tmp);
+	tecSel = new FindFlat(FL2, tmp);
 	Echo("Установлены панели: " + tecSel.ToString());
 	Out.Add(tecSel);
 	return true;
@@ -632,9 +632,9 @@ void Restore(string value, int i = 0)
 	while (i < cou && !string.IsNullOrWhiteSpace(val[i]))
 	{
 		var st = val[i++].TrimEnd('\r').Split('-');
-		Abs_Plane tmp;
-		int tp = Abs_Plane.TryParse(x => GridTerminalSystem.GetBlockWithId(long.Parse(x)) as IMyTextSurfaceProvider, st[1], out tmp);
-		if (tp == -10) Out.Add(new FindPlane(FindList.Parse(st[0]), tmp));
+		Abs_Flat tmp;
+		int tp = Abs_Flat.TryParse(x => GridTerminalSystem.GetBlockWithId(long.Parse(x)) as IMyTextSurfaceProvider, st[1], out tmp);
+		if (tp == -10) Out.Add(new FindFlat(FindList.Parse(st[0]), tmp));
 	}
 
 	for (i++; i < cou; i++)
@@ -757,24 +757,24 @@ public class FindList : List<FindItem>
 
 
 
-public class Abs_Plane
+public class Abs_Flat
 {
 	public delegate bool AsPanel(IMyTerminalBlock x);
 	public delegate TypeOfData GetVal<TypeOfData>(string x);
 	public object Owner = null;
 
-	protected Abs_Plane() { }
-	public Abs_Plane GetThis(object Own) { Owner = Own; return this; }
+	protected Abs_Flat() { }
+	public Abs_Flat GetThis(object Own) { Owner = Own; return this; }
 	public virtual string ToSave() => string.Empty;
 	public virtual bool ShowText(string[] vals) => false;
 	public virtual void ToBegin() { }
 	public virtual TextPanel Find(AsPanel val) => null;
-	public static Abs_Plane Parse(GetVal<IMyTextSurfaceProvider> Gr, string val)
-	{ Abs_Plane Par; if (TryParse(Gr, val, out Par) >= 0) throw new Exception(""); return Par; }
-	public static int TryParse(GetVal<IMyTextSurfaceProvider> Gr, string val, out Abs_Plane res)
+	public static Abs_Flat Parse(GetVal<IMyTextSurfaceProvider> Gr, string val)
+	{ Abs_Flat Par; if (TryParse(Gr, val, out Par) >= 0) throw new Exception(""); return Par; }
+	public static int TryParse(GetVal<IMyTextSurfaceProvider> Gr, string val, out Abs_Flat res)
 	{
 		res = null;
-		Abs_Plane tmp = null;
+		Abs_Flat tmp = null;
 		int b = -1, co = 0;
 		char ch;
 		string s;
@@ -794,13 +794,13 @@ public class Abs_Plane
 						if (b > 0)
 						{
 							byte tpb; if (!byte.TryParse(val.Substring(0, b - 1), out tpb)) return 0;
-							if (tpb < 2) res = new TextPlane(tpb == 1, tmp);
-							else if (tmp is TextPanel) res = new LinePlane(tmp as TextPanel);
+							if (tpb < 2) res = new TextFlat(tpb == 1, tmp);
+							else if (tmp is TextPanel) res = new LineFlat(tmp as TextPanel);
 							else return b + 1;
 						}
 						else res = tmp;
-					else if (!(res is TextPlane)) return b + 1;
-					else (res as TextPlane).Add(tmp);
+					else if (!(res is TextFlat)) return b + 1;
+					else (res as TextFlat).Add(tmp);
 					b = ++i;
 				}
 				continue;
@@ -814,8 +814,8 @@ public class Abs_Plane
 				int code = TryOneParse(Gr, s, out tmp);
 				if (code > -10) return code + b + 1;
 				if (res == null) res = tmp;
-				else if (!(res is TextPlane)) return b + 1;
-				else (res as TextPlane).Add(tmp);
+				else if (!(res is TextFlat)) return b + 1;
+				else (res as TextFlat).Add(tmp);
 				b = i;
 			}
 		}
@@ -826,12 +826,12 @@ public class Abs_Plane
 			var code = TryOneParse(Gr, val.Substring(b + 1, co - b), out tmp);
 			if (code > -10) return code + b + 1;
 			if (res == null) res = tmp;
-			else if (!(res is TextPlane)) return b + 1;
-			else (res as TextPlane).Add(tmp);
+			else if (!(res is TextFlat)) return b + 1;
+			else (res as TextFlat).Add(tmp);
 		}
 		return -10;
 	}
-	private static int TryOneParse(GetVal<IMyTextSurfaceProvider> Gr, string val, out Abs_Plane res)
+	private static int TryOneParse(GetVal<IMyTextSurfaceProvider> Gr, string val, out Abs_Flat res)
 	{
 		var arp = val.Split('>');
 		res = null;
@@ -840,12 +840,12 @@ public class Abs_Plane
 			case 1: { var tp = Gr(arp[0]); if (tp == null) return -1; res = new TextPanel(tp); } break;
 			case 2:
 				{
-					byte b; Abs_Plane tmp = null;
+					byte b; Abs_Flat tmp = null;
 					if (!byte.TryParse(arp[0], out b)) return 0;
 					var code = TryOneParse(Gr, arp[1], out tmp);
 					if (code > -10) return code + arp[0].Length;
-					if (b < 2) res = new TextPlane(b == 1, tmp);
-					else if (tmp is TextPanel) res = new LinePlane(tmp as TextPanel);
+					if (b < 2) res = new TextFlat(b == 1, tmp);
+					else if (tmp is TextPanel) res = new LineFlat(tmp as TextPanel);
 					else return code + arp[0].Length;
 				}
 				break;
@@ -855,7 +855,7 @@ public class Abs_Plane
 	}
 }
 
-public class TextPanel : Abs_Plane
+public class TextPanel : Abs_Flat
 {
 	public readonly IMyTextSurface Surface;
 	public readonly IMyTerminalBlock OwnerBloc;
@@ -870,7 +870,15 @@ public class TextPanel : Abs_Plane
 	public override string ToSave() => OwnerBloc.EntityId.ToString();
 	public override bool ShowText(string[] vals) => ShowText(GetStr(vals));
 	public bool ShowText(string val)
-	{ Surface.WriteText(val + "\n", true); return ++_cou >= (int)(18 / Surface.FontSize); }
+	{
+		Surface.WriteText(val + "\n", true);
+
+		StringBuilder nw = new StringBuilder();
+		Surface.ReadText(nw, false);
+		var sz = Surface.MeasureStringInPixels(nw, Surface.Font, Surface.FontSize);
+		return (nw.Length > 0 && sz.Y <= Surface.SurfaceSize.Y - Surface.TextPadding);
+	}
+		//return ++_cou >= (int)(18 / Surface.FontSize); }
 	public override void ToBegin() { _cou = 0; Surface.WriteText(String.Empty); }
 	public override TextPanel Find(AsPanel val) => val(OwnerBloc) ? this : null;
 	public int GetLines() => 0;
@@ -885,86 +893,86 @@ public class TextPanel : Abs_Plane
 	}
 }
 
-public class TextPlane : Abs_Plane
+public class TextFlat : Abs_Flat
 {
-	public List<Abs_Plane> Planes { get; } = new List<Abs_Plane>();
+	public List<Abs_Flat> Flats { get; } = new List<Abs_Flat>();
 	public bool Hor;
 	int _Tec = 0;
-	public void Add(Abs_Plane val) => Planes.Add(val.GetThis(this));
-	public override void ToBegin() { _Tec = 0; Planes.ForEach(x => x.ToBegin()); }
-	public TextPlane(bool horis, Abs_Plane First, params Abs_Plane[] other)
-	{ Hor = horis; Planes.Add(First.GetThis(this)); for (var i = 0; i < other.Length; i++) Planes.Add(other[i].GetThis(this)); }
-	public override string ToString() => string.Format("{{{0}:{1}}}", Hor ? "Horizontal" : "Vertical", string.Join(", ", Planes));
+	public void Add(Abs_Flat val) => Flats.Add(val.GetThis(this));
+	public override void ToBegin() { _Tec = 0; Flats.ForEach(x => x.ToBegin()); }
+	public TextFlat(bool horis, Abs_Flat First, params Abs_Flat[] other)
+	{ Hor = horis; Flats.Add(First.GetThis(this)); for (var i = 0; i < other.Length; i++) Flats.Add(other[i].GetThis(this)); }
+	public override string ToString() => string.Format("{{{0}:{1}}}", Hor ? "Horizontal" : "Vertical", string.Join(", ", Flats));
 	public override string ToSave()
 	{
 		var res = new StringBuilder("{" + (Hor ? "1" : "0") + ">");
-		var tmp = new List<string>(Planes.Count);
-		Planes.ForEach(x => tmp.Add(x.ToSave()));
+		var tmp = new List<string>(Flats.Count);
+		Flats.ForEach(x => tmp.Add(x.ToSave()));
 		res.Append(string.Join(";", tmp) + "}");
 		return res.ToString();
 	}
 	public override bool ShowText(string[] text)
 	{
-		var Max = Planes[_Tec].ShowText(text);
-		if (Planes.Count == 1) return Max;
-		if (Hor) { if (++_Tec == Planes.Count) _Tec = 0; else Max = false; }
-		else if (Max && Planes.Count - _Tec > 1) _Tec++;
+		var Max = Flats[_Tec].ShowText(text);
+		if (Flats.Count == 1) return Max;
+		if (Hor) { if (++_Tec == Flats.Count) _Tec = 0; else Max = false; }
+		else if (Max && Flats.Count - _Tec > 1) _Tec++;
 		return Max;
 	}
 	public override TextPanel Find(AsPanel val)
 	{
 		TextPanel res = null;
-		for (var i = 0; i < Planes.Count && res == null; i++) res = Planes[i].Find(x => val(x));
+		for (var i = 0; i < Flats.Count && res == null; i++) res = Flats[i].Find(x => val(x));
 		return res;
 	}
 }
 
-public class LinePlane : TextPlane
+public class LineFlat : TextFlat
 {
 	public void Add(TextPanel val) => base.Add(val);
-	public LinePlane(TextPanel First, params TextPanel[] other) : base(false, First, other) { }
-	public override string ToString() => $"{{InLine:{string.Join(", ", Planes)}}}";
+	public LineFlat(TextPanel First, params TextPanel[] other) : base(false, First, other) { }
+	public override string ToString() => $"{{InLine:{string.Join(", ", Flats)}}}";
 	public override string ToSave()
 	{
 		var res = new StringBuilder("{2>");
-		var tmp = new List<string>(Planes.Count);
-		Planes.ForEach(x => tmp.Add(x.ToSave()));
+		var tmp = new List<string>(Flats.Count);
+		Flats.ForEach(x => tmp.Add(x.ToSave()));
 		res.Append(string.Join(";", tmp) + "}");
 		return res.ToString();
 	}
 	public override bool ShowText(string[] text)
 	{
-		int ml = text.Length - 1, _mx = Math.Min(Planes.Count - 1, ml), i;
-		if (ml < 1) return (Planes[0] as TextPanel).ShowText(text);
+		int ml = text.Length - 1, _mx = Math.Min(Flats.Count - 1, ml), i;
+		if (ml < 1) return (Flats[0] as TextPanel).ShowText(text);
 		var MAX = false;
-		for (i = 0; i < _mx; i++) MAX = (Planes[i] as TextPanel).ShowText(text[i + 1]) || MAX;
-		_mx = ml - Planes.Count;
-		if (_mx == 0) MAX = (Planes[i] as TextPanel).ShowText(text[i + 1]) || MAX;
+		for (i = 0; i < _mx; i++) MAX = (Flats[i] as TextPanel).ShowText(text[i + 1]) || MAX;
+		_mx = ml - Flats.Count;
+		if (_mx == 0) MAX = (Flats[i] as TextPanel).ShowText(text[i + 1]) || MAX;
 		else if (_mx > 0)
 		{
 			ml = text[0].IndexOf("{" + (i + 1) + "}");
-			MAX = (Planes[i] as TextPanel).ShowText(string.Format(text[0].Substring(ml), text)) || MAX;
+			MAX = (Flats[i] as TextPanel).ShowText(string.Format(text[0].Substring(ml), text)) || MAX;
 		}
 		return MAX;
 	}
 }
 
-public class FindPlane : FindList
+public class FindFlat : FindList
 {
 	public List<string[]> Texts { get; } = new List<string[]>();
-	public readonly Abs_Plane Plane;
+	public readonly Abs_Flat Flat;
 
-	public FindPlane(Abs_Plane Tp) { Plane = Tp.GetThis(this); }
-	public FindPlane(FindList Fl, Abs_Plane Tp) : base(Fl) { Plane = Tp.GetThis(this); }
-	public void ShowText() => Texts.ForEach(x => Plane.ShowText(x));
-	public override string ToString() => base.ToString(LangDic.GetName) + "-" + Plane.ToString();
-	public string ToSave() => base.ToString() + "-" + Plane.ToSave();
+	public FindFlat(Abs_Flat Tp) { Flat = Tp.GetThis(this); }
+	public FindFlat(FindList Fl, Abs_Flat Tp) : base(Fl) { Flat = Tp.GetThis(this); }
+	public void ShowText() => Texts.ForEach(x => Flat.ShowText(x));
+	public override string ToString() => base.ToString(LangDic.GetName) + "-" + Flat.ToString();
+	public string ToSave() => base.ToString() + "-" + Flat.ToSave();
 }
 
-public class TextsOut : List<FindPlane>
+public class TextsOut : List<FindFlat>
 {
 	public StringBuilder Uncown { get; } = new StringBuilder();
-	private new void Add(FindPlane val) => Add(val);
+	private new void Add(FindFlat val) => Add(val);
 	public bool AddText(FinderItem Type, params string[] Val)
 	{
 		var res = Find(x => x.IsInclude(Type));
@@ -981,13 +989,13 @@ public class TextsOut : List<FindPlane>
 		return true;
 	}
 	public void ShowText() => ForEach(x => x.ShowText());
-	public bool FindPanel(Abs_Plane.AsPanel val, out FindPlane Fp, out TextPanel Tp)
+	public bool FindPanel(Abs_Flat.AsPanel val, out FindFlat Fp, out TextPanel Tp)
 	{
 		TextPanel Tp_ = null;
-		Fp = Find(fp => { Tp_ = fp.Plane.Find(x => val(x)); return Tp_ != null; });
+		Fp = Find(fp => { Tp_ = fp.Flat.Find(x => val(x)); return Tp_ != null; });
 		return (Tp = Tp_) != null;
 	}
-	public void ClearText() { ForEach(x => { x.Texts.Clear(); x.Plane.ToBegin(); }); Uncown.Clear(); }
+	public void ClearText() { ForEach(x => { x.Texts.Clear(); x.Flat.ToBegin(); }); Uncown.Clear(); }
 }
 
 public class MyInvIt : FinderItem
