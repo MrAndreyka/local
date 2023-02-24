@@ -44,7 +44,8 @@
                         "\n[Comands]\nsend_to=\nantena_on=\nantena_off=\n---\n\n" +
 @"send - Отправить BC:Текст
 send_to - Отправить UC:Адресат:Текст
-#send_pos - Отправить BC свою позицию";
+#send_pos - Отправить BC свою позицию
+auto";
 
                 if (s != null)
                 {
@@ -87,10 +88,14 @@ send_to - Отправить UC:Адресат:Текст
                 }
                 Echo("Инициализация завершена " + (txt?.Surface().Name ?? ""));
                 Echo(Ant?.CustomName ?? "");
-            }
+
+                foreach (var x in Coms) Echo($"{x.Key}:{x.Value.command} - {x.Value.brod}");
+             }
             catch (Exception e)
             {
-                Echo(e.ToString());
+                var s = e.ToString();
+                Echo(s);
+                Me.CustomData += "\n" + s;
             }
         }
 
@@ -173,13 +178,16 @@ send_to - Отправить UC:Адресат:Текст
                         long.TryParse(param, out tmp);
                         SentMessage(MyGPS.GPS(Me.CubeGrid.CustomName, Me.GetPosition()), tmp); }
                     break;
+                case "send":
+                    SentMessage(param, 0);
+                    break;
                 case "antena_on":
                     { Ant.Enabled = true; SetTxt("Антена вкл"); }
                     break;
                 case "antena_off":
                     { Ant.Enabled = false; SetTxt("Антена вкл"); }
                     break;
-                default: return false;
+                default: Echo("Uncown action: "+ mes); return false;
             }
             return true;
         }
@@ -192,6 +200,13 @@ send_to - Отправить UC:Адресат:Текст
                 var mes = mes_.As<string>();
                 SetTxt($"<B:{mes}:{mes_.Source}/{mes_.Tag}\t;");
                 checkCommand(mes, true);
+                if (NexMes.HasValue && NexMes.Value.Tag == "wait")
+                    if (IGC.IsEndpointReachable(mes_.Source))
+                    {
+                        SentMessage(NexMes.Value.As<string>(), mes_.Source);
+                        if (NexMes.Value.Source == 0) NexMes = null;
+                    }    
+                    else SetTxt("!!Не достижима: " + mes_.Source);
             }
 
             while (MesUProv.HasPendingMessage)
@@ -205,12 +220,13 @@ send_to - Отправить UC:Адресат:Текст
 
         void checkCommand(string val, bool brod) 
         {
-            var par = getToNext(ref val, ":");
-            if (string.IsNullOrWhiteSpace(par)) return;
+            if (string.IsNullOrWhiteSpace(val)) return;
             com_ tmp;
-            if (!Coms.TryGetValue(par, out tmp) || tmp.brod != brod) return;
+            if (!Coms.TryGetValue(val, out tmp) || tmp.brod != brod) return;
 
-            Go(tmp.command, val);
+            var str = tmp.command;
+            var com = getToNext(ref str, ":");
+            Go(com, str);
         }
 
         void SentMessage(string mes, long address = 0)
