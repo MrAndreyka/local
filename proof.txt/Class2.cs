@@ -22,7 +22,7 @@ namespace IngameScript
 {
     partial class Program
     {
-
         bool Between(int val, int min, int max) => val >= min && val <= max;
+
     }
 }

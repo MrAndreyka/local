@@ -29,7 +29,7 @@ namespace IngameScript
 			public delegate bool myPredicate(string myInt);
 			public Translate()
 			{
-				var a = ("Components,*компоненты*,PowerCell,Энергоячейка,SmallTube,Малая труба,Girder,Балка,SteelPlate,Стальная плаcтина,LargeTube,Большая труба," +
+				var a = ("Components,*компоненты*,PowerCell,Энергоячейка,Canvas,Холст,SmallTube,Малая труба,Girder,Балка,SteelPlate,Стальная плаcтина,LargeTube,Большая труба," +
 			   "MetalGrid,Металлическая решетка,SolarCell,Солнечная батарея,BulletproofGlass,Бронированное стекло,Motor,Мотор,Computer,Компьютер,Display,Экран," +
 			   "Reactor,Реактор,Construction,Строительный компонент,Detector,Компоненты детектора,GravityGenerator,Компоненты гравитационного генератора," +
 			   "InteriorPlate,Пластина,Medical,Медицинские компоненты,SmallSteelTube,Маленькая стальная трубка,Thrust,Детали ускорителя,Superconductor,Сверхпроводник," +
@@ -81,8 +81,8 @@ namespace IngameScript
 					case "panels"://Добавление панелей с параметрами в CD панели 
 						{
 							if (parms.Argument(1) == null) { Echo("Ожидается маска для поиска панелей"); return; }
-							string param = null;
-							while (param))
+							string param = null; int i = 1;
+							while ((param = parms.Argument(i++)) != null)
 							{
 								var L = new List<IMyTerminalBlock>();
 								new Selection(param).FindBlocks(GridTerminalSystem, L, x => x is IMyTextSurfaceProvider && !string.IsNullOrWhiteSpace(x.CustomData));
@@ -90,9 +90,9 @@ namespace IngameScript
 								L.ForEach(L1 =>
 								{
 									param = L1.CustomData;
-									arg = EndCut(ref param, "\n");
-									if (string.IsNullOrWhiteSpace(arg)) SetPanel(param, L1 as IMyTextSurfaceProvider);
-									else if (!SetPanel($"{param}:{arg.Replace("\n", "")}")) Echo(L1.CustomName);
+									//arg = EndCut(ref param, "\n");
+									if (string.IsNullOrWhiteSpace(arg)) SetPanel(param.ComLine(), L1 as IMyTextSurfaceProvider);
+									else if (!SetPanel($"{param}:{arg.Replace("\n", "")}".ComLine())) Echo(L1.CustomName);
 								});
 							}
 						}
@@ -102,7 +102,7 @@ namespace IngameScript
 						break;
 					case "panel-":
 						{
-							var sl = new Selection(parms.End());
+							var sl = new Selection(parms.Argument(1));
 							FindFlat fp; TextPanel ap; Abs_Flat tmp; TextFlat tp;
 							var fl = false; var sb = new StringBuilder("Удалены:\n");
 							while (Out.FindPanel(x => sl.Complies(x.CustomName), out fp, out ap))
@@ -121,29 +121,28 @@ namespace IngameScript
 						break;
 					case "panel+":
 						{
-							var p = parms.Get(-3);
-							if (p.Length < 2 || !parms.Endl()) 
+							if (!Between(parms.ArgumentCount, 3, 4)) 
 							{ Echo("Ожидается 2-3 параметра: <Индекс шаблона или Название панели>:" +
 								"<Маска поиска добавляемых блоков>:Горизонтальная группа"); return; }
 							
 							var L = new List<IMyTextSurfaceProvider>();
-							new Selection(p[1]).FindBlocks(GridTerminalSystem, L);
-							if (L.Count == 0) { Echo($"Панели по шаблону \"{p[1]}\" не найдены"); return; }
+							new Selection(parms.Argument(2)).FindBlocks(GridTerminalSystem, L);
+							if (L.Count == 0) { Echo($"Панели по шаблону \"{parms.Argument(2)}\" не найдены"); return; }
 							L.Sort(delegate (IMyTextSurfaceProvider x, IMyTextSurfaceProvider y) { return (x as IMyTerminalBlock).CustomName.CompareTo((y as IMyTerminalBlock).CustomName); });
 
 							FindFlat tc;
 							TextPanel tp;
 							int ind = -1;
-							int.TryParse(p[0], out ind);
+							int.TryParse(parms.Argument(1), out ind);
 
-							if (p.Length >= 0) { tc = Out[ind]; tp = tc.Flat.Find(x => true); }
-							else if (!Out.FindPanel(x => x.CustomName == p[0], out tc, out tp)) { Echo($"Панель \"{p[0]}\" еще не установлена"); return; }
+							if (ind >= 0) { tc = Out[ind]; tp = tc.Flat.Find(x => true); }
+							else if (!Out.FindPanel(x => x.CustomName == parms.Argument(1), out tc, out tp)) { Echo($"Панель \"{parms.Argument(1)}\" еще не установлена"); return; }
 
 							TextFlat TecPan;
 							if (tp.Owner == tc)
 							{
 								Out.Remove(tc);
-								tc = new FindFlat(tc, TecPan = new TextFlat(p[2] != "0", tp));
+								tc = new FindFlat(tc, TecPan = new TextFlat(parms.Argument(3) != "0", tp));
 								Out.Add(tc);
 							}
 							else TecPan = tp.Owner as TextFlat;
@@ -154,10 +153,8 @@ namespace IngameScript
 					case "rl":
 						{
 							var L = new List<IMyTerminalBlock>();
-							if (parms.Endl()) GridTerminalSystem.GetBlocks(L);
-							else if (parms.StartsWith("^"))
-								new Selection(parms.Seek(1).GetNext()).FindBlocks(GridTerminalSystem, L);
-							else new Selection(parms.GetNext(), Me.CubeGrid).FindBlocks(GridTerminalSystem, L);
+							if (parms.ArgumentCount < 2) GridTerminalSystem.GetBlocks(L);
+							else new Selection(parms.Argument(1), parms.Switch("^")? null: Me.CubeGrid).FindBlocks(GridTerminalSystem, L);
 							inv.Clear();
 							asm.Clear();
 							L.ForEach(x => AddBloc(x));
@@ -173,7 +170,7 @@ namespace IngameScript
 					case "asm":
 						{
 							int pos;
-							if (!int.TryParse(parms.End(), out pos)) { Echo("Требует числовой параметр"); return; }
+							if (!int.TryParse(parms.Argument(1), out pos)) { Echo("Требует числовой параметр"); return; }
 							if (pos >= asm.Count) { Echo($"Слишком большое значние, всего {asm.Count} сборщиков"); return; }
 							if (pos == 0) { return; }
 							asm.Move(pos, 0);
@@ -182,15 +179,15 @@ namespace IngameScript
 						break;
 					case ">":
 						{
-							if (parms.StartsWith("-:"))
+							if (parms.Switch("-"))
 							{
 								var tc = stor.Count;
-								var ss = new Selection(parms.Seek(2).End());
+								var ss = new Selection(parms.Argument(1));
 								stor.RemoveAll(x => ss.Complies(x.Inv.ToString()));
 								tc -= stor.Count;
 								Echo(tc == 0 ? "Не найдены блоки по запросу" : $"Удалено {tc} блоков");
 							}
-							else AddStorage(parms.End());
+							else AddStorage(parms.Argument(1));
 
 							// Исправляем если нужно типы инвентарей 
 							inv.ForEach(delegate (InvData x)
@@ -212,18 +209,18 @@ namespace IngameScript
 						{
 							bool First = true;
 							var buf = new StringBuilder();
-							var all = parms.Endl();
-							if (all || parms.Contains("storage")>=0)
+							var all = parms.ArgumentCount == 1;
+							if (all || parms.Argument(1).Contains("storage"))
 							{
 								if (!First) buf.AppendLine(); buf.AppendLine("Склады:"); First = false;
 								buf.AppendLine(string.Join("\r\n", stor));
 							}
-							if (all || parms.Contains("limit") >= 0)
+							if (all || parms.Argument(1).Contains("limit"))
 							{
 								if (!First) buf.AppendLine(); buf.AppendLine("Лимиты:"); First = false;
 								buf.AppendLine(string.Join("\r\n", Limits));
 							}
-							if (all || parms.Contains("bloc") >= 0)
+							if (all || parms.Argument(1).Contains("bloc"))
 							{
 								if (!First) buf.AppendLine(); buf.AppendLine("Инвентари:"); First = false;
 								inv.ForEach(x =>
@@ -233,12 +230,12 @@ namespace IngameScript
 									else buf.AppendLine(x.ToString());
 								});
 							}
-							if (all || parms.Contains("ass") >= 0)
+							if (all || parms.Argument(1).Contains("ass"))
 							{
 								if (!First) buf.AppendLine(); buf.AppendLine("Сборщики:"); First = false;
 								asm.ForEach(x => buf.AppendLine(x.CustomName + (x.CooperativeMode ? "" : " >> основной")));
 							}
-							if (all || parms.Contains("panel") >= 0)
+							if (all || parms.Argument(1).Contains("panel"))
 							{
 								if (!First) buf.AppendLine(); buf.AppendLine("Панели:"); First = false;
 								Out.ForEach(x => buf.AppendLine(x.ToString()));
@@ -249,15 +246,14 @@ namespace IngameScript
 						break;
 					case "limit+":
 						{
+							if (parms.Items.Count < 3) { Echo("Ожидается 2 параметра: что сколько добавить <-?>"); return; }
 							int ind, cou;
-							parms.GetNext();
-							var ts = parms.End();//EndCut(ref param, ":");
-							if (parms.Endl()) { Echo("Ожидаются параметры"); return; }
-
+							var ts = parms.Argument(1);
+							
 							var name = LangDic.Find(x => x.StartsWith(ts)).Key;
 
 							if (name != null) ind = Limits.FindIndex(x => x.Lnk.Name == name);
-							else if (!int.TryParse(parms.End(), out ind))
+							else if (!int.TryParse(ts, out ind))
 							{ Echo("Первым параметром ожидается имя элемента или номер в списке лимитов.\nНе удалось опознать: " + ts); return; }
 
 							if (ind >= Limits.Count || ind < 0)
@@ -267,17 +263,23 @@ namespace IngameScript
 									"воспользуйтесь сборщиком. Имя которого передайте в команду \"limit\""); return;
 							}
 
-							if (!int.TryParse(parms.Last(), out cou)) { Echo("Не верное значения количества"); return; }
+							name = parms.ArgumentCount > 3 ? parms.Argument(2) :
+							parms.Switches.Any(x => x != "?") ? "-" + parms.Switches.First(x => x != "?") : null;
+
+							if (!int.TryParse(name, out cou)) { Echo("Не верное значения количества"); return; }
 							var t = Limits[ind];
 							t.count += cou;
+							if (parms.Switch("?")) 
+								{ Echo($"Для {t.ShowName} будет установлен новый лимит: {t.count}"); return; }
+							
 							Limits[ind] = t;
 							Echo($"Для {t.ShowName} установлен новый лимит: {t.count}");
 						}
 						break;
 					case "limit":
 						{
-							if (parms.Endl()) Limits.Clear();
-							else SetLimit(parms.End());
+							if (parms.ArgumentCount == 1) Limits.Clear();
+							else SetLimit(parms.Argument(1));
 						}
 						break;
 					case "init":
@@ -289,16 +291,16 @@ namespace IngameScript
 						break;
 					case "save"://Записывает сосояние 
 						{
-							var bl = GridTerminalSystem.GetBlockWithName(parms.End());
+							var bl = GridTerminalSystem.GetBlockWithName(parms.Argument(1));
 							bl.CustomData = ToSave();
 							Echo($"Сохранено в {bl.CustomName}.CustomData");
 						}
 						break;
 					case "load"://Считывает сосояние 
 						{
-							var bl = GridTerminalSystem.GetBlockWithName(parms.End());
+							var bl = GridTerminalSystem.GetBlockWithName(parms.Argument(1));
 							if (bl == null || string.IsNullOrEmpty(bl.CustomData))
-							{ Echo("Не найден блок с параметрами в CustomData: " + parms.End()); return; }
+							{ Echo("Не найден блок с параметрами в CustomData: " + parms.Argument(1)); return; }
 							Restore(bl.CustomData);
 						}
 						break;
@@ -306,8 +308,8 @@ namespace IngameScript
 					case "ul":
 						{
 							List<IMyTerminalBlock> l = new List<IMyTerminalBlock>();
-							new Selection(parms.End()).FindBlocks(GridTerminalSystem, l, x => x.HasInventory && (!InvData.IsSpecBloc(x) || !x.IsWorking));
-							if (l.Count == 0) { Echo($"Не найдены блоки по запросу: {parms.End()}"); return; }
+							new Selection(parms.Argument(1)).FindBlocks(GridTerminalSystem, l, x => x.HasInventory && (!InvData.IsSpecBloc(x) || !x.IsWorking));
+							if (l.Count == 0) { Echo($"Не найдены блоки по запросу: {parms.Argument(1)}"); return; }
 
 							var Dil = new Dictionary<InvDT, List<MyInvItem>>();
 							l.ForEach(x => Moved(new InvDT(x, (byte)(x.InventoryCount - 1)), ref Dil));
@@ -318,7 +320,7 @@ namespace IngameScript
 					case "replay":
 						{
 							int i;
-							if (!int.TryParse(parms.End(), out i)) { Echo("Неверно указан интервал"); return; }
+							if (!int.TryParse(parms.Argument(1), out i)) { Echo("Неверно указан интервал"); return; }
 							TM.SetInterval(i * 1000, false);
 							Echo(TM.GetInterval().ToString());
 						}
@@ -504,16 +506,16 @@ namespace IngameScript
 
 		public bool SetPanel(MyCommandLine param, IMyTextSurfaceProvider txt = null)
 		{
-			if (txt == null && param.Length() != 2) { Echo("Ожидается 2 параметра: Что:{2>Куда1;Куда2}"); return false; }
-			var FL2 = ParseMask(param.GetNext());
+			if (txt == null && param.ArgumentCount < 3) { Echo("Ожидается 2 параметра: Что:{2>Куда1;Куда2}"); return false; }
+            var FL2 = ParseMask(param.Argument(1));
 
-			Abs_Flat tmp;
+            Abs_Flat tmp;
 			var sl = new Selection(null);
-			if (param.Length() < 2) tmp = new TextPanel(txt);
+			if (param.ArgumentCount < 3) tmp = new TextPanel(txt);
 			else
 			{
-				int tp = Abs_Flat.TryParse(x => sl.Change(x).FindBlock<IMyTextSurfaceProvider>(GridTerminalSystem), param.GetNext(), out tmp);
-				if (tp > -10) { Echo(tp == -1 ? $"Не найдена панель: \"{sl.Value}\"" : $"Не верный формат шаблона ({tp + 1}) {param.Last()}"); return false; }
+				int tp = Abs_Flat.TryParse(x => sl.Change(x).FindBlock<IMyTextSurfaceProvider>(GridTerminalSystem), param.Argument(2), out tmp);
+				if (tp > -10) { Echo(tp == -1 ? $"Не найдена панель: \"{sl.Value}\"" : $"Не верный формат шаблона ({tp + 1}) {param.Argument(2)}"); return false; }
 			}
 
 			FL2.Find(z => Out.Find(x => x.In(z)) != null);
@@ -526,7 +528,6 @@ namespace IngameScript
 			Out.Add(tecSel);
 			return true;
 		}
-		public bool SetPanel(string param, IMyTextSurfaceProvider txt = null) => SetPanel(new StrPosition(param, ':'), txt);
 		bool AddBloc(IMyTerminalBlock X)
 		{
 			if (X is IMyAssembler) asm.Add(X as IMyAssembler);
@@ -576,7 +577,7 @@ namespace IngameScript
 			{
 				var msk = maski[e];
 				if (msk.Length == 0) { Echo("Пропуск пустой маски"); continue; }
-				string param = EndCut(ref msk, ":");
+				string param = msk.Begin(':');
 				var L = new List<IMyTerminalBlock>();
 				new Selection(msk).FindBlocks(GridTerminalSystem, L, x => x.HasInventory);
 				if (L.Count == 0) { Echo($"Склады по запросу \"{msk}\" не найдены"); continue; }
@@ -606,7 +607,7 @@ namespace IngameScript
 			}
 		}
 
-		static string EndCut(ref string val, string tc, int cou = 1)
+		/*static string EndCut(ref string val, string tc, int cou = 1)
 		{
 			int pos = -1;
 			while (--cou >= 0 && ++pos >= 0) if ((pos = val.IndexOf(tc, pos)) < 0) break;
@@ -614,7 +615,7 @@ namespace IngameScript
 			var Result = val.Substring(pos + 1);
 			val = val.Remove(pos);
 			return Result;
-		}
+		}*/
 		string ToSave()
 		{
 			var bs = new StringBuilder();
@@ -1046,9 +1047,9 @@ namespace IngameScript
 					case "AmmoMagazine": tp = 4; break;
 					case "Ore": tp = 5; break;
 					case "Ingot": tp = 6; break;
-					case "Components": tp = 2; break;
+					/*case "Components": tp = 2; break;
 					case "HandTool": tp = 3; break;
-					case "Ammo": tp = 4; break;
+					case "Ammo": tp = 4; break;*/
 					default: if (val.EndsWith("ContainerObject")) tp = 3; else tp = 7; break;
 				}
 				return tp;

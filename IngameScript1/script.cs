@@ -13,7 +13,7 @@ class Translate : Dictionary<String, string>
 	public delegate bool myPredicate(string myInt);
 	public Translate()
 	{
-		var a = ("Components,*компоненты*,PowerCell,Энергоячейка,SmallTube,Малая труба,Girder,Балка,SteelPlate,Стальная плаcтина,LargeTube,Большая труба," +
+		var a = ("Components,*компоненты*,PowerCell,Энергоячейка,Canvas,Холст,SmallTube,Малая труба,Girder,Балка,SteelPlate,Стальная плаcтина,LargeTube,Большая труба," +
 	   "MetalGrid,Металлическая решетка,SolarCell,Солнечная батарея,BulletproofGlass,Бронированное стекло,Motor,Мотор,Computer,Компьютер,Display,Экран," +
 	   "Reactor,Реактор,Construction,Строительный компонент,Detector,Компоненты детектора,GravityGenerator,Компоненты гравитационного генератора," +
 	   "InteriorPlate,Пластина,Medical,Медицинские компоненты,SmallSteelTube,Маленькая стальная трубка,Thrust,Детали ускорителя,Superconductor,Сверхпроводник," +
@@ -1031,9 +1031,9 @@ public class MyInvIt : FinderItem
 			case "AmmoMagazine": tp = 4; break;
 			case "Ore": tp = 5; break;
 			case "Ingot": tp = 6; break;
-			case "Components": tp = 2; break;
-			case "HandTool": tp = 3; break;
-			case "Ammo": tp = 4; break;
+			/*case "Components": tp = 2; break;
+					case "HandTool": tp = 3; break;
+					case "Ammo": tp = 4; break;*/
 			default: if (val.EndsWith("ContainerObject")) tp = 3; else tp = 7; break;
 		}
 		return tp;

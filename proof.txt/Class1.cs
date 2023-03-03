@@ -31,6 +31,19 @@ namespace IngameScript {
             return res;
         }
 
+        public static string Begin(this string msk, char ch, bool cut = false)
+        {
+            var i = msk.IndexOf(ch);
+            string res = i < 0 ? msk : msk.Substring(0, i);
+            if (cut) msk = i < 0 ? string.Empty : msk.Substring(i+1);
+            return res;
+        }
+        public static string Substring(this string val, int ind, string to)
+        {
+            var e = val.IndexOf(to, ind + 1);
+            return e < 0 ? val.Substring(ind) : val.Substring(ind, e - ind);
+        }
+
         public static MyCommandLine ComLine(this string arg)
         { var res = new MyCommandLine(); return res.TryParse(arg)? res: null; }
     } 
