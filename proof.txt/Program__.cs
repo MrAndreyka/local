@@ -1,4 +1,4 @@
-#region сборка VRage.Game, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+﻿#region сборка VRage.Game, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
 // D:\My Doc's\Space Engineers\Bin64\VRage.Game.dll
 #endregion
 
@@ -24,7 +24,7 @@ using VRageMath;
 
 namespace ConsoleApp_sharp
 {
-     partial class Program
+    partial class Program
     {
         public class MySurface //: IMyTextSurface
         {
@@ -52,20 +52,27 @@ namespace ConsoleApp_sharp
             public Vector2 SurfaceSize { get => SurfaceSize_(); }
         }
 
-        public abstract class txt_null
+        public interface ISaved { string ToString(bool isSave); }
+        /*  public interface ITxt_null
+          {
+              string ToString(bool isSave);
+              bool AddLine(string str, bool addAlways); //return false если панель полная
+              void Restore();
+          }*/
+        public abstract class Txt_null : ISaved
         {
             public abstract string ToString(bool isSave);
             public abstract bool AddLine(string str, bool addAlways); //return false если панель полная
             public abstract void Restore();
         }
 
-        class txt_Surface : txt_null
+        class Txt_Surface : Txt_null
         {
             public readonly IMyTextSurface Surface;
             public readonly IMyTerminalBlock OwnerBloc;
             public readonly int index = 0;
 
-            public txt_Surface(IMyTextSurfaceProvider block, int index = 0)
+            public Txt_Surface(IMyTextSurfaceProvider block, int index = 0)
             {
                 if (block.SurfaceCount == 0) throw new Exception("The block does not contain surface");
                 OwnerBloc = (IMyTerminalBlock)block;
@@ -90,13 +97,13 @@ namespace ConsoleApp_sharp
             public override void Restore() { Surface.WriteText(string.Empty); }
         }
 
-        class txt_Surface_ : txt_null
+        class Txt_Surface_ : Txt_null
         {
             public readonly MySurface Surface;
             public readonly string OwnerBloc;
             public readonly int index = 0;
 
-            public txt_Surface_(string block, int lines, int index = 0)
+            public Txt_Surface_(string block, int lines, int index = 0)
             {
                 OwnerBloc = block;
                 Surface = new MySurface(lines);
@@ -123,13 +130,13 @@ namespace ConsoleApp_sharp
             }
         }
 
-        public class txt_Panel : txt_null
+        public class Txt_Panel : Txt_null
         {
-            List<txt_null> flats { get; } = new List<txt_null>();
-            public List<txt_null> Flats => flats;
+            List<Txt_null> flats { get; } = new List<Txt_null>();
+            public List<Txt_null> Flats => flats;
             public bool hor;
             int _tec = 0;
-            public txt_Panel(bool horizontal, List<txt_null> list = null)
+            public Txt_Panel(bool horizontal, List<Txt_null> list = null)
             { hor = horizontal; if (list != null) flats = list; }
             public override string ToString(bool isSave = false)
             {
@@ -157,8 +164,8 @@ namespace ConsoleApp_sharp
                 bool f = false;
                 while (t-- > 0 && !f)
                 {
-                    f = flats[_tec].AddLine(str, false);
-                    Next(true);
+                    if (!(f = flats[_tec].AddLine(str, false)))
+                        f = Next(true);
                 }
                 if (!f && addAlways)
                     flats[flats.Count - 1].AddLine(str, true);
@@ -168,17 +175,17 @@ namespace ConsoleApp_sharp
             bool AddLineVert(string str, bool addAlways)
             {
                 bool f1 = false, fl = addAlways && IsEnd();
-                while (!(f1 = flats[_tec].AddLine(str, fl)) && !IsEnd())
+                while (!(f1 = flats[_tec].AddLine(str, fl) || !IsEnd()))
                     fl = Next(false) && addAlways;
 
                 return f1;
             }
             public override void Restore() { _tec = 0; flats.ForEach(x => x.Restore()); }
 
-            public delegate void FindPanel(List<txt_null> list, string pan, int index);
+            public delegate void FindPanel(List<Txt_null> list, string pan, int index);
 
             delegate bool skip(char x);
-            public static string TryParse(txt_Panel res, String val, ref int pos, FindPanel activ)
+            public static string TryParse(Txt_Panel res, String val, ref int pos, FindPanel activ)
             {
                 int ind = 0, start = pos;
 
@@ -192,7 +199,7 @@ namespace ConsoleApp_sharp
                     start++;
                     if (val.Skip(start).First(x => x != ' ' || ++start == 0) == '{')
                     {
-                        var p = new txt_Panel(false);
+                        var p = new Txt_Panel(false);
                         var r = TryParse(p, val, ref start, activ);
                         pos = ++start;
                         if (p == null) return r;
@@ -221,28 +228,34 @@ namespace ConsoleApp_sharp
             }
         }
 
-        public class selected_Panel<T, T2> : txt_Panel
+        public class selected<T> : ISaved
         {
-            public T Select;
-            public selected_Panel(T sel) : base(false) { Select = sel; }
+            T val;
+            public selected(T v) { val = v; }
+            public virtual string ToString(bool isSave)=>val.ToString();
+
+            public static implicit operator T(selected<T> v)=>v.val;
+            public static implicit operator selected<T>(T v) => new selected<T>(v);
+
+        }
+    
+        public class Selected_Panel<T,T2>: Txt_Panel
+        {
+            public selected<T> Select;
+            public Selected_Panel(T sel):base(false) {Select = sel; }
+            //public void SetPanel(ITxt_null txt_) => txt = txt_;
 
             public bool AddLine(T2 sel, string str)
             {
                 var fl = Select.Equals(sel);
-                if (fl)
-                    AddLine(str);
+                if (fl) AddLine(str, false);
                 return fl;
             }
             public override string ToString(bool isSave = false)
-            => $"{Select.ToString().ToParam('{')}{base.ToString(isSave)}";
-
-            public override int GetHashCode()
-            {
-                return HashCode.Combine(Select);
-            }
+            => $"{Select.ToString(isSave).ToParam('{')}{base.ToString(isSave)}";
         }
 
-        public class TextOut<T, T2> : List<selected_Panel<T, T2>>
+        public class TextOut<T, T2> : List<Selected_Panel<T, T2>>
         {
             public StringBuilder DefList = new StringBuilder();
             public void AddLine(T2 sel, string str, bool skipped = false)
@@ -251,21 +264,21 @@ namespace ConsoleApp_sharp
                     DefList.AppendLine(str);
             }
 
-            void Restore() { DefList.Clear(); ForEach(x => x.Restore()); }
+            public void Restore() { DefList.Clear(); ForEach(x => x.Restore()); }
             public string ToString(bool isSave = false)
             {
                 List<string> res = new List<string>(Count);
                 ForEach(x => res.Add(x.ToString(isSave)));
                 return string.Join(",", res);
             }
-            public string TryParse(string val, ref int pos, Func<string, T> Parse, txt_Panel.FindPanel findPanel)
+            public string TryParse(string val, ref int pos, Func<string, T> Parse, Txt_Panel.FindPanel findPanel)
             {
                 int start = pos - 1;
-                var list = new List<selected_Panel<T, T2>>();
+                var list = new List<Selected_Panel<T, T2>>();
                 do
                 {
                     start++;
-                    var tm = new selected_Panel<T, T2>(Parse(val.GetParam(ref start, '{')));
+                    var tm = new Selected_Panel<T, T2>(Parse(val.GetParam(ref start, '{')));
                     if (FindIndex(x => x.Equals(tm.Select)) >= 0)
                     { pos = start; return "Дублирование отбора в списке" + tm.Select.ToString(); }
                     if (list.FindIndex(x => x.Equals(tm.Select)) >= 0)
@@ -274,7 +287,7 @@ namespace ConsoleApp_sharp
                     if (val.Skip(start).First(x => x != ' ' || ++start == 0) != '{')
                     { pos = start; return "Ожидается '{' в начале"; }
 
-                    var er = txt_Panel.TryParse(tm, val, ref start, findPanel);
+                    var er = Txt_Panel.TryParse(tm, val, ref start, findPanel);
                     if (er != null) { pos = start; return er; }
                     list.Add(tm);
                 } while (++start < val.Length && val.Skip(start).First(x => x != ' ' || ++start == 0) == ',');
@@ -348,6 +361,10 @@ namespace ConsoleApp_sharp
                 return res;
             }
 
+            public override int GetHashCode()
+            {
+                throw new NotImplementedException();
+            }
         }
 
         static void Main2(string[] args)
@@ -356,24 +373,40 @@ namespace ConsoleApp_sharp
 
         }
 
+        public abstract class Re_ : ISaved { public abstract string ToString(bool fl); }
+
+        public class ReS : Re_
+        {
+            string value;
+            public ReS(string v) { value = v; }
+            public ReS() { }
+            public override string ToString(bool fl)
+            {
+                return fl? value.ToUpper() : value;
+            }
+            public override string ToString()=> ToString(false);
+
+            /*public static implicit operator T(Re<T> v) => v.value;
+            public static implicit operator Re<T>(T v) => new Re<T>(v);*/
+        }
         static void Main(string[] args)
         {
-            int start = 0;
-            TextOut<Sel_Group, Item_sel> a = new TextOut<Sel_Group, Item_sel>();
+            string value = @"Ajdabwd f
+C:\Program Files\dotnet\dotnet.exe (процесс 15700) завершил работу с кодом 0.
+Чтобы автоматически закрывать консоль при остановке отладки, включите параметр 
+""Сервис"" ->""Параметры"" ->""Отладка"" -> Автоматически закрыть консоль при остановке отладки
+Нажмите любую клавишу, чтобы закрыть это окно…
+        }";
 
-            var er = a.TryParse("001Группа1-+{ L1[0], { L2[0], L3[0]:0}:1},005ГруппаНе5++{ T1[0], { T2[0], T3[0]:1}:0},007Только7+-{ 1[0], 2[0]:1}",
-                ref start, x => Sel_Group.Parse(x), (l, n, i) => l.Add(new txt_Surface_(n, 10, i)));
-            if (er != null) { Console.WriteLine(er + "\t" + start.ToString()); return; }
-            start++;
+            int i = 2, g = 0;
+            value.First(x=>{ g++; return x == '\n' && (--i == 0); });
+           // value.Take((x, a) => { Console.WriteLine($"{a} {x}");  return false; });
+            //{ g++; return x != '\n' || (--i > 0); });
 
-            for (var i = 0; i < 50; i++)
-                //a.AddLine(new Item_sel((byte)(i % 10 + 1), i.ToString()), $"Str - {i}");//
-                a.AddLine(new Item_sel((byte)(i % 10 + 1), i.ToString()));
+            Console.WriteLine(i);
+            Console.WriteLine(g);
+            Console.WriteLine("\"" + value.Substring(0,g)+ "\"");
 
-            Console.WriteLine(a.ToString(false));
-            Console.WriteLine("\n=======================================\n");
-
-            Console.WriteLine(a.ToString(true));
         }
 
     }
