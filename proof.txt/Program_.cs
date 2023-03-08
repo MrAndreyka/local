@@ -235,11 +235,6 @@ namespace ConsoleApp_sharp
             }
             public override string ToString(bool isSave = false)
             => $"{Select.ToString().ToParam('{')}{base.ToString(isSave)}";
-
-            public override int GetHashCode()
-            {
-                return HashCode.Combine(Select);
-            }
         }
 
         public class TextOut<T, T2> : List<selected_Panel<T, T2>>
@@ -352,13 +347,23 @@ namespace ConsoleApp_sharp
 
         public class MyTree : Dictionary<string, MyTree>
         {
-            public string Value = null;
+            public string Val = null;
             public MyTree Owner = null;
             public MyTree() { }
             public MyTree(MyTree owner) { Owner = owner; }
             public new void Add(string key, MyTree val)
-            { base.Add(key, val); if (val != null) val.Owner = this; }
-            public override string ToString() => (Value == null ? "" : $"{Value}:") + Count.ToString() + "...";
+            {base.Add(key, val); if (val != null) val.Owner = this; }
+            public override string ToString() => (Val == null ? "" : $"{Val}:") + Count.ToString() + "...";
+            public void ForLoop(Action<KeyValuePair<string, MyTree>, int> Act, int lev = 0)
+            {
+               // Act(lev, this);
+                foreach (var t in this)
+                {
+                    Act(t, lev);
+                    if (t.Value != null)
+                        t.Value.ForEach(x => x.Value.ForLoop(Act, lev + 1));
+                }
+            }
         }
 
         public class TreeINI : MyTree
@@ -382,11 +387,10 @@ namespace ConsoleApp_sharp
                     pi.GetKeys(sel, lk);
 
                     tec2 = tec; tl = tu;
-                    lk.ForEach(x => { LoadPath(tec, ref tec2, x.Name, ref tl, name_sym); tec2.Value = pi.Get(x).ToString(); });
+                    lk.ForEach(x => { LoadPath(tec, ref tec2, x.Name, ref tl, name_sym); tec2.Val = pi.Get(x).ToString(); });
                 }
                 return true;
             }
-
             static void LoadPath(MyTree NulLevObj, ref MyTree tec, string sel, ref int level, char sym)
             {
                 string name;
@@ -403,11 +407,21 @@ namespace ConsoleApp_sharp
                         level--;
                     }
                     name = sel.Remove(0, n);
-                } else { level = 0; tec = NulLevObj; name = sel; }
+                }
+                else { level = 0; tec = NulLevObj; name = sel; }
 
                 tec.Add(name, tec = new MyTree());
                 level++;
             }
+        }
+
+        static void goIItem( KeyValuePair<string, MyTree> x, int n)
+        {
+            Console.Write(new string(' ', n));
+            Console.Write(x.Key + ":");
+
+            if (x.Value.Val != null) Console.Write(x.Value.Val);
+            Console.WriteLine();
         }
 
         static void Main(string[] args)
@@ -426,29 +440,26 @@ _2=Lcd[1_2]
 1.2=Lcd[0]
 [___Position]
 1.2=True";
-            MyIni i = new MyIni();
-            if (!i.TryParse(value)) { Console.WriteLine("Ошибка преобразования"); return; }
+            /*MyIni i = new MyIni();
+             if (!i.TryParse(value)) { Console.WriteLine("Ошибка преобразования"); return; }
 
-            var lk = new List<MyIniKey>();
+             var lk = new List<MyIniKey>();
 
-            i.GetKeys(lk);
-            lk.ForEach(x => Console.WriteLine($"{x.ToString()}: {i.Get(x).ToString()}"));
-            Console.WriteLine("****-************************");
+             i.GetKeys(lk);
+             lk.ForEach(x => Console.WriteLine($"{x.ToString()}: {i.Get(x).ToString()}"));
+             Console.WriteLine("****-************************");*/
 
             var t = new TreeINI();
             t.AddINI(value, '_', '_');
 
-            public delegate void write(KeyValuePair<string, MyTree> x);
- 
-            foreach(var tt in t)
-                write(tt);
+            t.ForLoop(goIItem);
+
+        }        
 
 
 
-                Console.WriteLine(tt.ToString());
+        
 
-
-        }
 
         static void Main2(string[] args)
         {
