@@ -56,6 +56,7 @@ namespace IngameScript
             public abstract void Restore();
             public abstract Txt_Surface FindPanel(Func<ITextSurf, bool> f);
         }
+        
         public class Txt_Surface : Txt_null, ITextSurf
         {
             public readonly IMyTextSurface Surface;
@@ -90,6 +91,7 @@ namespace IngameScript
             public override Txt_Surface FindPanel(Func<ITextSurf, bool> f)
             => f(this) ? this : null;
         }
+        
         public class Txt_Panel : Txt_null
         {
             List<Txt_null> flats { get; } = new List<Txt_null>();
