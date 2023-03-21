@@ -23,58 +23,139 @@ namespace IngameScript
     partial class Program
     {
         bool Between(int val, int min, int max) => val >= min && val <= max;
+        public class MyTree : List<MyTree>
+        {
+            public MyTree Owner = null;
+            public string Name = null;
+            public string Param = null;
+            public string GetValue() => Name + (string.IsNullOrEmpty(Param) ? null : "=" + Param);
+            public MyTree() { }
+            public MyTree(string name , string param = null) { Param = param; Name = name; }
+            public new void Add(MyTree tree) { base.Add(tree); tree.Owner = this; }
+            public MyTree Add(string name, string param = null) { var r = new MyTree(name, param); Add(r); return r; }
+            public void Add(string name, MyTree tree) { tree.Name = name; Add(tree); }
+            public MyTree GetSection(string name) => this.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            public void Parse(string value, char sym_break = '\t')
+            {
+                MyTree tec = this;
+                int t_lev = 1, i = 0, b = 0;
+                while (i >= 0)
+                {
+                    i = value.IndexOf('\n', b);
+                    var str = value.Substring(b, (i < 0 ? value.Length : i) - b);
+                    b = i + 1;
+                    LoadPath(this, ref tec, str.TrimEnd(), ref t_lev, sym_break);
+                }
+            }
+            static MyTree Parse(string value)
+            {
+                var i = value.IndexOf('=');
+                var res = new MyTree();
+                if (i >= 0)
+                {
+                    res.Name = value.Substring(0, i);
+                    res.Param = value.Substring(i + 1);
+                }
+                else res.Name = value;
+                return res;
+            }
+            static void LoadPath(MyTree NulLevObj, ref MyTree tec, string sel, ref int level, char sym)
+            {
+                int n = -1;
+                sel.First(c => (++n) >= 0 && c != sym);
+
+                if (n > level)
+                    throw new Exception("Level error in name: " + sel);
+                if (n == 0) { level = 0; tec = NulLevObj; }
+                while (n < level) { tec = tec.Owner; level--; }
+
+                string name;
+                if (sel[n] == '[' && sel.EndsWith("]"))
+                    name = sel.Substring(n + 1, sel.Length - n - 2);
+                else name = n == 0 ? sel : sel.Remove(0, n);
+
+                tec.Add(tec = Parse(name));
+                level++;
+            }
+            public void ForLoop(Action<MyTree, int> Act, int s_lev = 0)
+            {
+                foreach (var t in this)
+                {
+                    Act(t, s_lev);
+                    t.ForLoop(Act, s_lev + 1);
+                }
+            }
+            public string ToString(char chapter_sym = '\t')
+            {
+                StringBuilder res = new StringBuilder();
+                ForLoop((x, l) =>
+                {
+                    if (x.Count <= 0)
+                        res.Append(new string(chapter_sym, l) + x.GetValue());
+                    else
+                        res.Append(new string(chapter_sym, l)).Append('[').Append(x.GetValue()).Append(']');
+                    res.AppendLine();
+                });
+                return res.ToString();
+            }
+        }
+
 
         public delegate string GetNames(string val);
         public class InvDT
         {
             public readonly IMyInventory Inventory;
-            public readonly IMyTerminalBlock Owner;
-            public InvDT(IMyTerminalBlock Bl, byte Index = byte.MaxValue)
-            { Owner = Bl; Inventory = Index == byte.MaxValue ? Bl.GetInventory() : Bl.GetInventory(Index); }
-            public bool Equals(InvData obj) => Inventory.Equals(obj.Inventory);
-            public override string ToString() => Owner.CustomName;
+            public readonly byte Index;
+
+            public InvDT(IMyTerminalBlock Bl, byte index = byte.MaxValue)
+            { Inventory = (Index = index) == byte.MaxValue ? Bl.GetInventory() : Bl.GetInventory(index); }
+            public string ToSave()
+            => Inventory.Owner.EntityId.ToString() + (Index == byte.MaxValue ? null : $"/{Index}");
+            public override string ToString() => (Inventory.Owner as IMyTerminalBlock).CustomName;
         }
         public class InvData : InvDT
         {
             public byte key;
             public InvData(IMyTerminalBlock tb, byte InvInd, byte key_) : base(tb, InvInd) { key = key_; }
             public static bool IsSpecBloc(IMyTerminalBlock tb) { return ((tb is IMyReactor) || (tb is IMyGasGenerator) || (tb is IMyGasTank) || (tb is IMyLargeTurretBase)); }
+            public new string ToSave() => key.ToString("0") + base.ToSave();
         }
 
         public interface ITextSurf
         {
-            IMyTerminalBlock OwnerBloc {get;}
-            int Index {get;}
+            IMyTerminalBlock OwnerBloc { get; }
+            int Index { get; }
         }
 
-        public interface ISaving { string ToString(bool isSave); }
-        public abstract class Txt_null:ISaving
+        public interface ISaving { MyTree Save(MyTree val = null); }
+        public interface ITxt_null : ISaving
         {
-            public Txt_Panel Owner;
-            public abstract string ToString(bool isSave);
-            public abstract bool AddLine(string str, bool addAlways); //return false если панель полная
-            public abstract void Restore();
-            public abstract Txt_Surface FindPanel(Func<ITextSurf, bool> f);
+            Txt_Panel Owner { get; set; }
+            string ToString();
+            bool AddLine(string str, bool addAlways); //return false если панель полная
+            void Restore();
+            Txt_Surface FindPanel(Func<ITextSurf, bool> f);
         }
-        
-        public class Txt_Surface : Txt_null, ITextSurf
+
+        public class Txt_Surface : ITxt_null, ITextSurf
         {
             public readonly IMyTextSurface Surface;
             private readonly IMyTerminalBlock ownerBloc;
             private readonly int index = 0;
+            public Txt_Panel Owner { get; set; }
 
             public IMyTerminalBlock OwnerBloc => ownerBloc;
             public int Index => index;
             public Txt_Surface(IMyTextSurfaceProvider block, int index = 0)
             {
+                if (block == null) return;
                 if (block.SurfaceCount == 0) throw new Exception("The block does not contain surface");
                 ownerBloc = (IMyTerminalBlock)block;
                 Surface = block.GetSurface(this.index = index);
                 Surface.ContentType = ContentType.TEXT_AND_IMAGE;
             }
-            public override string ToString(bool isSave = false)
-            => isSave ? $"{ownerBloc.EntityId}[{index}]" : $"{ownerBloc.CustomName.ToParam()} [{index}]";
-            public override bool AddLine(string str, bool addAlways = true)
+            public override string ToString() => $"{ownerBloc.CustomName}/{index}";
+            public bool AddLine(string str, bool addAlways = true)
             {
                 if (addAlways) return Surface.WriteText(str + "\n", true);
 
@@ -87,132 +168,138 @@ namespace IngameScript
                 Surface.WriteText(str + "\n");
                 return true;
             }
-            public override void Restore() { Surface.WriteText(string.Empty); }
-            public override Txt_Surface FindPanel(Func<ITextSurf, bool> f)
-            => f(this) ? this : null;
+            public void Restore() { Surface.WriteText(string.Empty); }
+            public Txt_Surface FindPanel(Func<ITextSurf, bool> f) => f(this) ? this : null;
+            public virtual MyTree Save(MyTree res = null)
+            {
+                if (res == null) res = new MyTree();
+                res.Name = ownerBloc.EntityId.ToString();
+                res.Param = index.ToString();
+                return res;
+            }
         }
-        
-        public class Txt_Panel : Txt_null
+
+        public class Txt_Panel : List<ITxt_null>, ITxt_null
         {
-            List<Txt_null> flats { get; } = new List<Txt_null>();
-            public List<Txt_null> Flats => flats;
             public bool hor;
             int _tec = 0;
-            public Txt_Panel(bool horizontal, List<Txt_null> list = null)
-            { hor = horizontal; if (list != null) flats = list; }
-            public override string ToString(bool isSave = false)
-            {
-                var tmp = new List<string>(flats.Count);
-                flats.ForEach(x => tmp.Add(x.ToString(isSave)));
-                return $"{{{string.Join(", ", tmp)}:{(isSave ? (hor ? "+" : "-") : (hor ? "Horizontal" : "Vertical"))}}}";
-            }
+            public Txt_Panel Owner { get; set; }
+            public Txt_Panel(bool horizontal, List<ITxt_null> list = null)
+            { hor = horizontal; if (list != null) base.AddRange(list); }
+            public new void Add(ITxt_null val) { val.Owner = this; base.Add(val); }
 
-            public bool IsEnd() => _tec > flats.Count;
+            public bool IsEnd() => _tec > Count;
             //Сдвигается к следующей позиции, возвращает истина если оказывается на последней позиции
             bool Next(bool to_round = false)
-            => (!IsEnd() || to_round) && (++_tec < flats.Count) || ((_tec = 0) == 0);
+            => (!IsEnd() || to_round) && (++_tec < Count) || ((_tec = 0) == 0);
 
-            public override bool AddLine(string str, bool addAlways = true)
+            public bool AddLine(string str, bool addAlways = true)
             {
-                if (flats.Count == 0) return false;
+                if (Count == 0) return false;
                 return hor ? AddLineHor(str, addAlways) : AddLineVert(str, addAlways);
             }
 
             bool AddLineHor(string str, bool addAlways)
             {
-                var t = flats.Count;
+                var t = Count;
                 bool f = false;
                 while (t-- > 0 && !f)
                 {
-                    if (!(f = flats[_tec].AddLine(str, false)))
+                    if (!(f = this[_tec].AddLine(str, false)))
                         f = Next(true);
                 }
                 if (!f && addAlways)
-                    flats[flats.Count - 1].AddLine(str, true);
+                    this[Count - 1].AddLine(str, true);
                 return f;
             }
 
             bool AddLineVert(string str, bool addAlways)
             {
-                bool f1 = false, fl = addAlways && IsEnd();
-                while (!(f1 = flats[_tec].AddLine(str, fl) || !IsEnd()))
+                bool f1, fl = addAlways && IsEnd();
+                while (!(f1 = this[_tec].AddLine(str, fl) || !IsEnd()))
                     fl = Next(false) && addAlways;
 
                 return f1;
             }
 
-            public override void Restore() { _tec = 0; flats.ForEach(x => x.Restore()); }
+            public void Restore() { _tec = 0; ForEach(x => x.Restore()); }
 
-            public override Txt_Surface FindPanel(Func<ITextSurf, bool> f)
+            public Txt_Surface FindPanel(Func<ITextSurf, bool> f)
             {
                 Txt_Surface p = null;
-                flats.FindIndex(x => (p=x.FindPanel(f)) != null);
+                FindIndex(x => (p = x.FindPanel(f)) != null);
                 return p;
             }
-            public static string TryParse(Txt_Panel res, String val, ref int pos, Func<string, int, List<IMyTextSurfaceProvider>>f)
+            public override string ToString() => $"{{{string.Join(", ", this)}}}/{(hor ? "Horizontal" : "Vertical")}";
+            public virtual MyTree Save(MyTree res = null)
             {
-                int ind = 0, start = pos;
-                if (val.Skip(start).First(x => x != ' ' || ++start == 0) != '{')
-                { pos = start; return "Ожидается '{' в начале"; }
+                if (res == null) res = new MyTree();
+                res.Param = hor.ToString();
+                ForEach(x => res.Add(x.Save()));
+                return res;
+            }
+            public static string TryParse(Txt_Panel res, MyTree val, Action<List<ITxt_null>, string, int> GetSurf, Func<string, bool> GetBool = null)
+            {
+                if (GetBool == null) GetBool = bool.Parse;
+                res.hor = GetBool(val.Param);
 
-                do
+                string er;
+                foreach (var x in val)
                 {
-                    start++;
-                    if (val.Skip(start).First(x => x != ' ' || ++start == 0) == '{')
+                    if (x.Count == 0)
+                        GetSurf(res, x.Name, int.Parse(x.Param));
+                    else
                     {
-                        var pn = new Txt_Panel(false);
-                        var r = TryParse(pn, val, ref start, f);
-                        pos = ++start;
-                        if (pn == null) return r;
-                        pn.Owner = res;
-                        res.flats.Add(pn);
-                        continue;
+                        var p = new Txt_Panel(false);
+                        er = TryParse(p, x, GetSurf, GetBool);
+                        if (er != null) return er;
+                        res.Add(p);
                     }
-
-                    var name = val.GetParam(ref start, ',', '[', ':');
-                    if (string.IsNullOrEmpty(name)) { pos = start; return "Ожидается название панели"; }
-
-                    if (val[start] == '[')
-                    { start++; ind = val.GetParam(ref start, ']').AsInt(0); start++; }
-
-                    var p = f(name, ind);
-                    p.ForEach(x => { res.flats.Add(new Txt_Surface(x, ind) { Owner = res }); });
-                } while (start < val.Length && val.Skip(start).First(x => x != ' ' || ++start == 0) == ',');
-
-                ind = start;
-                start = val.IndexOf('}', start);
-                if (start < 0) { pos = ind; return "Ожидается '}'"; }
-
-                if (val[ind] == ':')
-                    res.hor = val.Skip(++ind).First(x => x != ' ' || ++start == 0) == '+';
-
-                pos = start;
+                }
                 return null;
             }
         }
 
-  
-        public class Selected_Panel<T, T2 >: Txt_Panel
+        public class Selected_Panel<T, T2> : Txt_Panel where T : ISaving
         {
             public T Select;
-            public Selected_Panel(T sel) :base(false) 
-            { 
-                if (!(sel is ISaving)) 
-                    throw new Exception("Недопустимый тип наследования для Selected_Panel");
-                Select = sel;
-            }
+            public Selected_Panel(T sel) : base(false) { Select = sel; }
 
             public bool AddLine(T2 sel, string str)
             {
-                 var fl = Select.Equals(sel);
-                 if (fl) base.AddLine(str);
-                 return fl;
+                var fl = Select.Equals(sel);
+                if (fl) base.AddLine(str);
+                return fl;
             }
-            public override string ToString(bool isSave = false)
-            => $"{(Select as ISaving).ToString(isSave).ToParam('{')}{base.ToString(isSave)}";
+            public override string ToString() => $"{Select}:{base.ToString()}";
+
+            public override MyTree Save(MyTree res = null)
+            {
+                if (res == null) res = new MyTree();
+                res.Add("Select", Select.Save());
+                res.Add("Surface", base.Save());
+                return res;
+            }
+
+            public static Selected_Panel<T, T2> Parse(MyTree val, Func<MyTree, T> GetSel, Action<List<ITxt_null>, string, int> GetTxt, Func<string, bool> GetBool = null)
+            {
+                var tmp = val.GetSection("Select");
+                if (tmp == null) throw new Exception("Не найден сектор Select");
+
+                var sl = GetSel(tmp);
+                if (sl == null) throw new Exception("Не удалось восстановить Select в Selected_Panel");
+
+                tmp = val.GetSection("Surface");
+                if (tmp == null) throw new Exception("Не найден сектор Surface");
+
+                var res = new Selected_Panel<T, T2>(sl);
+                var er = TryParse(res, tmp, GetTxt, GetBool);
+                if (er != null) throw new Exception(er);
+                return res;
+            }
         }
 
-        public class TextOut<T, T2> : List<Selected_Panel<T, T2>>
+        public class TextOut<T, T2> : List<Selected_Panel<T, T2>> where T : ISaving
         {
             public StringBuilder DefList = new StringBuilder();
             public void AddLine(T2 sel, string str, bool skipped = false)
@@ -223,11 +310,11 @@ namespace IngameScript
             public void AddLine(string Val)=>DefList.Append(Val);
             public bool IsSpec(T2 sel) => FindIndex(x=>x.Select.Equals(sel)) >= 0;
             public void Restore() { DefList.Clear(); ForEach(x => x.Restore()); }
-            public string ToString(bool isSave = false)
+            public override string ToString()
             {
                 List<string> res = new List<string>(Count);
-                ForEach(x => res.Add(x.ToString(isSave)));
-                return string.Join(isSave?",":"\n", res);
+                ForEach(x => res.Add(x.ToString()));
+                return string.Join("\n", res);
             }
             public Txt_Surface FindPanel(Func<ITextSurf, bool> f)
             {
@@ -235,29 +322,20 @@ namespace IngameScript
                 FindIndex(x => (p = x.FindPanel(f)) != null);
                 return p;
             }
-            public string TryParse(string val, ref int pos, Func<string, T> fs, Func<string, int, List<IMyTextSurfaceProvider>> fp)
+            public MyTree Save(MyTree res = null)
             {
-                int start = pos - 1;
-                var list = new List<Selected_Panel<T, T2>>();
-                do
-                {
-                    start++;
-                    var tm = new Selected_Panel<T, T2>(fs(val.GetParam(ref start, '{')));
-                    if (FindIndex(x => x.Equals(tm.Select)) >= 0)
-                    { pos = start; return "Дублирование отбора в списке" + tm.Select.ToString(); }
-                    if (list.FindIndex(x => x.Equals(tm.Select)) >= 0)
-                    { pos = start; return "Дублирование отбора в шаблоне " + tm.Select.ToString(); }
-
-                    if (val.Skip(start).First(x => x != ' ' || ++start == 0) != '{')
-                    { pos = start; return "Ожидается '{' в начале"; }
-
-                    var er = Txt_Panel.TryParse(tm, val, ref start, fp);
-                    if (er != null) { pos = start; return er; }
-                    list.Add(tm);
-                } while (++start < val.Length && val.Skip(start).First(x => x != ' ' || ++start == 0) == ',');
-
-                AddRange(list);
-                return null;
+                if (res == null) res = new MyTree();
+                ForEach(x => res.Add(x.Save()));
+                return res;
+            }
+            public bool Load(MyTree res, Func<MyTree, T> GetSel, Action<List<ITxt_null>, string, int> GetPan, Func<string, bool> GetBool = null)
+            {
+                Selected_Panel<T, T2> tm;
+                res.ForEach(x => {
+                    if ((tm = Selected_Panel<T, T2>.Parse(x, GetSel, GetPan, GetBool)) != null)
+                        Add(tm);
+                });
+                return true;
             }
         }
 
@@ -265,9 +343,7 @@ namespace IngameScript
         {
             public byte Type;
             public string Name;
-
             public Item_sel(byte Type, string Name = null) { this.Type = Type; this.Name = Name; }
-
             public bool Equals(Item_sel obj) => Type == obj.Type && Name == obj.Name;
         }
               
@@ -276,29 +352,21 @@ namespace IngameScript
             public bool invert;
             public Sel_Item(byte Type, string Name = null, bool invert = false) : base(Type, Name) 
             {this.invert = invert;}
-            public bool Equals(Sel_Item obj) => base.Equals(obj) && invert == obj.invert;
+            public bool Equals(Sel_Item obj)=> base.Equals(obj) && invert == obj.invert;
             public bool Include(Item_sel obj)
             => (Type>0 ? (Type == obj.Type) : base.Equals(obj)) != invert;
-            public override string ToString()
-            => $"{(invert ? "!" : "")}{LangDic.GetName(Name)}";
-            public string ToString(bool isSave)
-             => isSave? $"{(invert ? "+" : "-")}{Type:000}{Name}" : ToString();
+            public override string ToString()=> $"{(invert ? "!" : "")}{LangDic.GetName(Name)}";
         }
 
-        public class Sel_Group : List<Sel_Item>, ISaving
+        public class Sel_Group : List<Sel_Item>, ISaving, IEquatable<Sel_Group>
         {
             public Sel_Group() { }
-            public Sel_Group(IEnumerable<Sel_Item> collection) : base(collection) { Sort_(); }
             public new void Add(Sel_Item val)
-            {
-                if (FindIndex(x => x.Equals(val)) < 0)
-                { base.Add(val); Sort_(); }
-            }
+            { if (FindIndex(x => x.Equals(val)) < 0){ base.Add(val); Sort_(); } }
             void Sort_() => Sort(delegate (Sel_Item a, Sel_Item b) 
             { return a.invert == b.invert ? (a.Type == b.Type && a.Type == 0 ? 0 : a.Type==0 ? -1 : 1) : a.invert ? -1 : 1; });
             public void AddNonExisting(Sel_Group val)
             { AddRange(val.FindAll(x => FindIndex(y => y.Equals(x)) >= 0)); Sort_(); }
-            public bool In(Sel_Item val) => Find(x => x.Equals(val)) != null;
             public bool In(Item_sel val) => Find(x => x.Include(val)) != null;
             public bool Equals(Sel_Group val) => Count == val.Count && Count > 0 && FindIndex(x => val.FindIndex(y => x.Equals(y)) < 0) < 0;
             public override bool Equals(Object obj)
@@ -308,32 +376,23 @@ namespace IngameScript
                 return obj is object &&
                        EqualityComparer<Object>.Default.Equals(this, obj as object);
             }
-            public override string ToString() => ToString(false);
-            public string ToString(bool isSave)
+            public override int GetHashCode() => Capacity.GetHashCode();
+            public override string ToString() => string.Join(", ", this);
+            public MyTree Save(MyTree res)
             {
-                var s = new List<string>(Count);
-                base.ForEach(x => s.Add(x.ToString(isSave)));
-                return string.Join(isSave?",":", ", s);
-            }
-            public static Sel_Group Parse(string val)
-            {
-                var res = new Sel_Group();
-                var t = val.Split(',');
-                foreach (var v in t)
-                {
-                    var t2 = new Sel_Item(byte.Parse(v.Substring(1, 3)), v.Substring(4, v.Length - 4));
-                    t2.invert = v[0] == '+';
-                    res.Add(t2);
-                }
+                if (res == null) res = new MyTree();
+                ForEach(x => res.Add(new MyTree(x.ToString(), x.Type.ToString())));
                 return res;
             }
-          /*  public override int GetHashCode()
+            public static Sel_Group Parse(MyTree val)
             {
-                int hashCode = -1591213915;
-                hashCode = hashCode * -1521134295 + Capacity.GetHashCode();
-                hashCode = hashCode * -1521134295 + Count.GetHashCode();
-                return hashCode;
-            }*/
+                var res = new Sel_Group();
+                foreach (var v in val)
+                    res.Add(new Sel_Item(string.IsNullOrWhiteSpace(v.Param)? (byte)0 : byte.Parse(v.Param), v.Name.Part('!', true), v.Name[0] == '!'));
+                return res;
+            }
+
+            public void Load(MyTree val) => val.ForEach(v => Add(new Sel_Item(byte.Parse(v.Param), v.Name.Part('!', true), v.Name[0] == '!')));
         }
 
         public class MyInvIt : Item_sel
@@ -409,7 +468,7 @@ namespace IngameScript
             }
         }
 
-        public class MyBuild_Item : MyInvItem
+        public class MyBuild_Item : MyInvItem,ISaving
         {
             public readonly MyDefinitionId IDDef;
 
@@ -424,7 +483,7 @@ namespace IngameScript
                 else if (s.EndsWith("PhysicalObject")) s = s.Replace("PhysicalObject", "");
                 return s;
             }
-            public string ToSave() => IDDef.ToString() + ToString("|{3}|{2}");
+            //public string ToSave() => IDDef.ToString() + ToString("|{3}|{2}");
             public new static MyBuild_Item Parse(string val)
             { MyBuild_Item res; if (!TryParse(val, out res)) throw new Exception("Error in parse"); return res; }
             public static bool TryParse(string val, out MyBuild_Item res)
@@ -437,11 +496,20 @@ namespace IngameScript
                 res = new MyBuild_Item(b) { count = cou };
                 return true;
             }
+            public MyTree Save(MyTree val = null)
+            {
+                if (val == null) val = new MyTree();
+                val.Name = IDDef.ToString();
+                val.Param = count.ToString();
+                return val;
+            }
+            public static MyBuild_Item Parse(MyTree val)
+            => new MyBuild_Item(MyDefinitionId.Parse(val.Name)) {count = double.Parse(val.Param)};
         }
 
-        public class MyRef : Sel_Group
+        public class MyRef : Sel_Group, ISaving
         {
-            public InvDT Inv { get; }
+            public readonly InvDT Inv; //{ get; }
             public MyRef(IMyTerminalBlock Bloc) { Inv = new InvDT(Bloc); }
             public override string ToString()
             {
@@ -450,23 +518,25 @@ namespace IngameScript
                 return Inv + ": " + string.Join(" ", ls);
             }
 
-            public static MyRef Parse(IMyGridTerminalSystem Gp, string val)
+            public new MyTree Save(MyTree val = null)
             {
-                var m = val.Split(';');
-                var bl = Gp.GetBlockWithId(long.Parse(m[0]));
-                var res = new MyRef(bl);
-                for (var i = 1; i < m.Length && !string.IsNullOrWhiteSpace(m[i]); i++) res.AddList(Parse(m[i]));
-                return res;
+                if (val == null) val = new MyTree();
+                else val.Add(val = new MyTree("Ref"));
+                val.Param = Inv.ToSave();
+                base.Save(val);
+                return val; 
             }
-
-            public string ToSave()
+            public static MyRef Parse(MyTree res, Func<string, IMyTerminalBlock> GetBloc)
             {
-                var bl = (Inv.Owner as IMyTerminalBlock);
-                if (bl == null) return string.Empty;
-                return bl.EntityId.ToString() + ";" + string.Join(";", this);
+                var bl = GetBloc(res.Param);
+                if (bl == null) throw new Exception("Не определен блок");
+                var rs = new MyRef (bl);
+                rs.Load(res);
+                return rs;
             }
         }
-        public class Sklads : List<MyRef>
+
+        public class Sklads : List<MyRef>, ISaving
         {
             public int GetInv_Move(Item_sel It, IMyInventory Inv, ref int i)
             {
@@ -488,6 +558,13 @@ namespace IngameScript
                 }
                 return i = -1;// beg < Count ? beg : -1; 
             }
+            public MyTree Save(MyTree res = null)
+            {
+                if (res == null) res = new MyTree();
+                ForEach(x => res.Add(x.Save()));
+                return res;
+            }
+            public void Load(MyTree res, Func<string, IMyTerminalBlock> GetBloc)=>res.ForEach(x => Add(MyRef.Parse(res, GetBloc)));
         }
         public class Selection
         {

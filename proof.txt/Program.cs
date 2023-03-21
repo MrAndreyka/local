@@ -78,28 +78,43 @@ namespace IngameScript
 				if (parms == null || (arg = parms.Argument(0)) == null) return;
 				switch (arg.ToLower())
 				{
-					case "panels"://Добавление панелей с параметрами в CD панели 
+					case "panels"://Добавление панелей с отбором в CD панели 
+						if(parms.Switch("ini"))
 						{
+							var tr = new MyTree();
+							tr.Parse((new Selection(parms.Argument(1)).FindBlock<IMyTerminalBlock>(GridTerminalSystem) ?? Me).CustomData, ' ');
+							tr = tr.GetSection("PANELS");
+							if (tr == null) { Echo("Не найдена область PANELS"); return; }
+							Out.Clear();
+
+							var fp = new Selection(null);
+							Out.Load(tr, Sel_Group.Parse, (l, name, ind) =>
+							{
+								var lst = fp.Change(name).FindBlocks<IMyTextSurfaceProvider>(GridTerminalSystem);
+								lst.ForEach(b => l.Add(new Txt_Surface(b, ind)));
+							}, s => s.StartsWith("hor", StringComparison.OrdinalIgnoreCase) ||
+							s.StartsWith("-") || s.Equals("true", StringComparison.OrdinalIgnoreCase));
+							SetAtributes("? panels");
+						} else
+						{
+
 							if (parms.Argument(1) == null) { Echo("Ожидается маска для поиска панелей"); return; }
-							string param; int i = 1;bool isOne = parms.Switch("inline");
+							string param; int i = 1;
 
 							while ((param = parms.Argument(i++)) != null)
 							{
 								var L = new List<IMyTerminalBlock>();
 								new Selection(param).FindBlocks(GridTerminalSystem, L, x => x is IMyTextSurfaceProvider);
 								if (L.Count == 0) { Echo("Не найдены панели по запросу"); return; }
-								
-								//if(isOne)
-									L.Sort((x, y) => x.CustomData.CompareTo(y.CustomData));
 
 								var fp = L.Find(x => !string.IsNullOrWhiteSpace(x.CustomData));
-								if(fp==null) { Echo("Не найдены параметры в CustomData"); return; }
+								if(fp==null) { Echo("Не найдены параметры в " + param + ".CustomData"); return; }
 
 								var mask = ParseMask(fp.CustomData);
 								if(mask.Count==0) { Echo("Не верная маска в CustomData"); return; }
 								var tmp = new Selected_Panel<Sel_Group, Item_sel>(mask);
 								
-								L.ForEach(x => tmp.Flats.Add(new Txt_Surface(x as IMyTextSurfaceProvider)));
+								L.ForEach(x => tmp.Add(new Txt_Surface(x as IMyTextSurfaceProvider)));
 								var tecSel = Out.Find(x => x.Equals(tmp.Select));//Поиск с такими же настройками 
 								if (tecSel != null) Out.Remove(tecSel);
 
@@ -107,9 +122,6 @@ namespace IngameScript
 								Out.Add(tmp);
 							}
 						}
-						break;
-					case "panel":
-						SetPanel(parms);
 						break;
 					case "panel-":
 						if (parms.Switch("index"))
@@ -122,18 +134,18 @@ namespace IngameScript
 						else
 						{
 							var sl = new Selection(parms.Argument(1));
-							Txt_null tp;
+							ITxt_null tp;
 							var sb = new StringBuilder("Удалены:\n");
 							while ((tp = Out.FindPanel(x => sl.Complies(x.OwnerBloc.CustomName))) != null)
 							{
 								sb.AppendLine((tp as Txt_Surface).OwnerBloc.ToString());
 								Txt_Panel ow = tp.Owner;
-								while (ow.Owner != null && ow.Flats.Count == 1)
+								while (ow.Owner != null && ow.Count == 1)
 								{ tp = ow; ow = ow.Owner; }
 
-								if (ow.Flats.Count == 1)
+								if (ow.Count == 1)
 									Out.Remove(ow as Selected_Panel<Sel_Group, Item_sel>);
-								else ow.Flats.Remove(tp);
+								else ow.Remove(tp);
 							}
 							Echo(tp != null ? sb.ToString() : $"Панели по маске \"{sl.Value}\" не найдены");
 						}
@@ -141,8 +153,8 @@ namespace IngameScript
                     case "panel+":
                         {
                             if (!Between(parms.ArgumentCount, 3, 4)) {
-								Echo("Ожидается 2-3 параметра: <Индекс шаблона или Название панели> " +
-								  "<Маска поиска добавляемых блоков> Горизонтальная группа"); return; }
+								Echo("Ожидается 2 параметра: <Индекс шаблона или Название панели> " +
+								  "<Маска поиска добавляемых блоков>"); return; }
 
 							var L = new List<IMyTextSurfaceProvider>();
 							new Selection(parms.Argument(2)).FindBlocks(GridTerminalSystem, L);
@@ -163,7 +175,7 @@ namespace IngameScript
 								if(ts==null){ Echo($"Панель \"{parms.Argument(1)}\" еще не установлена"); return; }
 								tp = ts.Owner;
 							}
-							L.ForEach(x => tp.Flats.Add(new Txt_Surface(x)));
+							L.ForEach(x => tp.Add(new Txt_Surface(x)));
 						}
 						break;
 					case "reload":
@@ -223,43 +235,7 @@ namespace IngameScript
 						}
 						break;
 					case "?":
-						{
-							bool First = true;
-							var buf = new StringBuilder();
-							var all = parms.ArgumentCount == 1;
-							if (all || parms.Argument(1).Contains("storage"))
-							{
-								if (!First) buf.AppendLine().AppendLine("Склады:"); First = false;
-								buf.AppendLine(string.Join("\r\n", stor));
-							}
-							if (all || parms.Argument(1).Contains("limit"))
-							{
-								if (!First) buf.AppendLine().AppendLine("Лимиты:"); First = false;
-								buf.AppendLine(string.Join("\r\n", Limits));
-							}
-							if (all || parms.Argument(1).Contains("ass"))
-							{
-								if (!First) buf.AppendLine().AppendLine("Сборщики:"); First = false;
-								asm.ForEach(x => buf.AppendLine(x.CustomName + (x.CooperativeMode ? "" : " >> основной")));
-							}
-							if (all || parms.Argument(1).Contains("panel"))
-							{
-								if (!First) buf.AppendLine().AppendLine("Панели:"); First = false;
-								buf.AppendLine(Out.ToString());
-							}
-							if (all || parms.Argument(1).Contains("bloc"))
-							{
-								if (!First) buf.AppendLine().AppendLine("Инвентари:"); First = false;
-								inv.ForEach(x =>
-								{
-									if (x.key == 1) return;
-									else if (x.key == 2) buf.AppendLine("#" + x);
-									else buf.AppendLine(x.ToString());
-								});
-							}
-							if (all) buf.AppendLine($"\nАвтовыполнение: {TM}");
-							Echo(buf.ToString());
-						}
+						Echo(GetInfo(parms.Argument(1)).ToString());
 						break;
 					case "limit+":
 						{
@@ -300,12 +276,11 @@ namespace IngameScript
 						}
 						break;
 					case "init":
-						{
-							Out.Clear(); stor.Clear(); Limits.Clear();
-							var ar = Me.CustomData.Split('\n');
-							foreach (var str in ar) SetAtributes(str);
-						}
-						break;
+                        {
+                            Out.Clear(); stor.Clear(); Limits.Clear();
+                            foreach (var str in Me.CustomData.Split('\n')) SetAtributes(str);
+                        }
+                        break;
 					case "save"://Записывает сосояние 
 						{
 							var bl = GridTerminalSystem.GetBlockWithName(parms.Argument(1));
@@ -353,10 +328,10 @@ namespace IngameScript
 		{
 			MyIni _ini = new MyIni();
 
-			if (Storage.StartsWith("AutoBuild_2") && Me.TerminalRunArgument != "null")
+			if (Storage.StartsWith("AutoBuild_3") && Me.TerminalRunArgument != "null")
 				try
 				{
-					Restore(Storage, 2);
+					Restore(Storage.Substring(Storage.IndexOf("\n", 13)+1));
 					TM = Timer.Parse(Storage.Substring(12, Storage.IndexOf("\n", 13) - 12), this);
 				}
 				catch (Exception e)
@@ -375,6 +350,45 @@ namespace IngameScript
 			if (!string.IsNullOrWhiteSpace(Storage))
 				Storage = $"AutoBuild_2\n{TM.ToSave()}\n{Storage}";
 			Me.CustomData = Storage;
+		}
+
+		string GetInfo(string arg) 
+		{
+			bool First = true;
+			var buf = new StringBuilder();
+			var all = string.IsNullOrWhiteSpace(arg);
+			if (all || arg.Contains("storage"))
+			{
+				if (!First) buf.AppendLine().AppendLine("Склады:"); First = false;
+				buf.AppendLine(string.Join("\r\n", stor));
+			}
+			if (all || arg.Contains("limit"))
+			{
+				if (!First) buf.AppendLine().AppendLine("Лимиты:"); First = false;
+				buf.AppendLine(string.Join("\r\n", Limits));
+			}
+			if (all || arg.Contains("ass"))
+			{
+				if (!First) buf.AppendLine().AppendLine("Сборщики:"); First = false;
+				asm.ForEach(x => buf.AppendLine(x.CustomName + (x.CooperativeMode ? "" : " >> основной")));
+			}
+			if (all || arg.Contains("panel"))
+			{
+				if (!First) buf.AppendLine().AppendLine("Панели:"); First = false;
+				buf.AppendLine(Out.ToString());
+			}
+			if (all || arg.Contains("bloc"))
+			{
+				if (!First) buf.AppendLine().AppendLine("Инвентари:"); First = false;
+				inv.ForEach(x =>
+				{
+					if (x.key == 1) return;
+					else if (x.key == 2) buf.AppendLine("#" + x);
+					else buf.AppendLine(x.ToString());
+				});
+			}
+			if (all) buf.AppendLine($"\nАвтовыполнение: {TM}");
+			return buf.ToString();
 		}
 
 		readonly Timer TM;
@@ -453,7 +467,7 @@ namespace IngameScript
 		{
 			List<MyInventoryItem> list2 = new List<MyInventoryItem>();
 			var Dil = moved ? new Dictionary<InvDT, List<MyInvItem>>() : null;
-			inv.ForEach(delegate (InvData x)
+			inv.ForEach(x=>
 			{
 				if (moved && stor.Count > 0 && (x.key == 5 || x.key == 0)) Moved(x);//Делаем перемещения если нужно 
 				if (x.key == 5) return;
@@ -498,35 +512,19 @@ namespace IngameScript
 			}
 		}
 
-		public bool SetPanel(MyCommandLine param)
-		{
-			if (param.ArgumentCount < 3) 
-				{ Echo("Ожидается 2 параметра: Что {Куда1,Куда2:hor}"); return false; }
-			var tmp = new Selected_Panel<Sel_Group, Item_sel>(ParseMask(param.Argument(1)));
-
-			var sl = new Selection(null);int v = 0;
-			var er = Txt_Panel.TryParse(tmp, param.Argument(2), ref v, (name, ind)
-			=> sl.Change(name).FindBlocks<IMyTextSurfaceProvider>(GridTerminalSystem, x => x.SurfaceCount > ind));
-
-			var tecSel = Out.Find(x => x.Equals(tmp.Select));//Поиск с такими же настройками 
-			if (tecSel != null) Out.Remove(tecSel);
-
-			Echo("Установлены панели: " + tmp.ToString());
-			Out.Add(tmp);
-			return true;
-		}
 		bool AddBloc(IMyTerminalBlock X)
 		{
 			if (X is IMyAssembler) asm.Add(X as IMyAssembler);
 			if (!X.HasInventory || inv.FindIndex(x => x.Inventory.Owner == X) >= 0) return false;
 			byte key = 0;
-			if (stor.Find(x => x.Inv.Owner == X) != null) key = 5;
+			if (stor.Find(x => x.Inv.Inventory.Owner.Equals(X)) != null) key = 5;
 			else if (InvData.IsSpecBloc(X)) key = 2;
 
 			for (byte k = 0; k < X.InventoryCount; k++)
 				inv.Add(new InvData(X, k, X.InventoryCount > 1 && k == 0 ? (byte)1 : key));
 			return true;
 		}
+	
 		Sel_Group ParseMask(string masks)
 		{
 			var msks = masks.Split(',');
@@ -545,6 +543,7 @@ namespace IngameScript
 			}
 			return FL;
 		}
+		
 		void SetLimit(string name)
 		{
 			var asm_ = GridTerminalSystem.GetBlockWithName(name) as IMyAssembler;
@@ -559,6 +558,7 @@ namespace IngameScript
 				else tl.count += (double)x.Amount;
 			});
 		}
+	
 		public void AddStorage(string masks)
 		{
 			var maski = masks.Split(',');
@@ -566,7 +566,7 @@ namespace IngameScript
 			{
 				var msk = maski[e];
 				if (msk.Length == 0) { Echo("Пропуск пустой маски"); continue; }
-				string param = msk.Begin(':');
+				string param = msk.Part(':');
 				var L = new List<IMyTerminalBlock>();
 				new Selection(msk).FindBlocks(GridTerminalSystem, L, x => x.HasInventory);
 				if (L.Count == 0) { Echo($"Склады по запросу \"{msk}\" не найдены"); continue; }
@@ -596,7 +596,7 @@ namespace IngameScript
 			}
 		}
 
-		void Restore(string value, int i = 0)
+		void Restore(string value)
 		{
 			inv.Clear();
 			Out.Clear();
@@ -604,68 +604,56 @@ namespace IngameScript
 			stor.Clear();
 			Limits.Clear();
 			Echo("Восстановление настроек...");
-			int g = 0;
 
-			if (i > 0) { var k = i; value.First(x => { g++; return x == '\n' && (--k == 0); }); }
+			var Tr = new MyTree();
+			Tr.Parse(value);
 
-			i++; var sl = new Selection(null);
-			var l = new List<IMyTextSurfaceProvider>(1);
-			var res = Out.TryParse(value, ref g, Sel_Group.Parse, (n, ind) =>
-			{
-				l.Clear();
-				l.Add(GridTerminalSystem.GetBlockWithId(n.AsLong()) as IMyTextSurfaceProvider); return l;
-			});
-
-			var val = value.Substring(g).Split('\n');
-			var cou = val.Length;
-
-			Echo($"1 {cou}   {i}");
-
-			for (i++; i < cou; i++)
-			{
-				if (string.IsNullOrWhiteSpace(val[i])) break;
-				stor.Add(MyRef.Parse(GridTerminalSystem, val[i]));
+            var tmp = Tr.FirstOrDefault(x => x.Name.Equals("PANELS", StringComparison.OrdinalIgnoreCase));
+			if (tmp != null)
+			{	
+				Out.Load(tmp, Sel_Group.Parse, (l, name, ind) => {
+					var bl = GridTerminalSystem.GetBlockWithId(name.AsLong()) as IMyTextSurfaceProvider;
+					l.Add(new Txt_Surface(bl, ind));
+				});
 			}
-			Echo($"2 {cou}   {i}");
 
-			for (i++; i < cou; i++)
-			{
-				if (string.IsNullOrWhiteSpace(val[i])) break;
-				var tb = GridTerminalSystem.GetBlockWithId(long.Parse(val[i]));
-				if (tb != null) AddBloc(tb);
-			}
-			Echo($"3 {cou}   {i}");
+			tmp = Tr.FirstOrDefault(x => x.Name.Equals("STORAGES", StringComparison.OrdinalIgnoreCase));
+			if (tmp != null) stor.Load(tmp, n=> GridTerminalSystem.GetBlockWithId(n.AsLong()) as IMyTerminalBlock);
 
-			for (i++; i < cou; i++)
-			{
-				if (string.IsNullOrWhiteSpace(val[i])) break;
-				Limits.Add(MyBuild_Item.Parse(val[i]));
-			}
-			Echo($"4 {cou}   {i}");
+			tmp = Tr.FirstOrDefault(x => x.Name.Equals("LIMITS", StringComparison.OrdinalIgnoreCase));
+			if (tmp != null) tmp.ForEach(x => Limits.Add(MyBuild_Item.Parse(x)));
 
-			var u = asm.FindIndex(x => !x.CooperativeMode);
-			if (u > 0) asm.Move(u, 0);
+			tmp = Tr.FirstOrDefault(x => x.Name.Equals("BOXES", StringComparison.OrdinalIgnoreCase));
+			if (tmp != null)
+                tmp.ForEach(x => {
+					inv.Add(new InvData(GridTerminalSystem.GetBlockWithId(
+						x.Param.Part('/').AsLong()) as IMyTerminalBlock,
+						x.Param.Part('/', true, false).AsByte(),
+						x.Param.Substring(0, 1).AsByte()));
+				});
+
 			Echo("Восстановление завершено удачно!");
 		}
 
 		string ToSave()
 		{
-			var bs = new StringBuilder();
-			bs.AppendLine(Out.ToString(true));
+			var tr = new MyTree();
 
-			bs.AppendLine();
-			var ls = new List<string>();
-			stor.ForEach(x => bs.AppendLine(x.ToSave()));
-
-			bs.AppendLine();
-			inv.ForEach(delegate (InvData x)
-			{ if (x.key != 1) bs.AppendLine(x.Owner.EntityId.ToString()); });
-
-			bs.AppendLine();
-			ls.Clear();
-			Limits.ForEach(x => bs.AppendLine(x.ToSave()));
-
-			return bs.ToString();
+			if (Out.Count > 0) tr.Add("PANELS", Out.Save());
+			if (stor.Count > 0) tr.Add("STORAGES", stor.Save());
+			if (Limits.Count > 0)
+			{
+				var tmp = new MyTree();
+				Limits.ForEach(x => tmp.Add(x.Save()));
+				tr.Add("LIMITS", tmp);
+			}
+			if (inv.Count > 0) 
+			{
+				var tmp = new MyTree();
+				inv.ForEach(x => tmp.Add(new MyTree(x.ToSave())));
+				tr.Add("BOXES", tmp);
+			}
+			return tr.ToString();
 		}
 
 	}

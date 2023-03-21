@@ -50,7 +50,7 @@ namespace ConsoleApp_sharp
             int Index { get; }
         }
 
-        public class MySurface //: IMyTextSurface
+        public class MySurface
         {
             public int total_lines, cur_lines = 0;
             private StringBuilder res = new StringBuilder();
@@ -76,24 +76,22 @@ namespace ConsoleApp_sharp
             public Vector2 SurfaceSize { get => SurfaceSize_(); }
         }
 
-        public interface IStsSave { string ToString(bool isSave); }
         public interface ISaving { MyTree Save(MyTree val = null); }
-
-        public abstract class Txt_null : ISaving
+        public interface ITxt_null : ISaving
         {
-            public Txt_Panel Owner = null;
-            public abstract string ToString(bool isSave);
-            public abstract bool AddLine(string str, bool addAlways); //return false если панель полная
-            public abstract void Restore();
-            public abstract Txt_Surface FindPanel(Func<ITextSurf, bool> f);
-            public abstract MyTree Save(MyTree res = null);
+            Txt_Panel Owner { get; set; }
+            string ToString();
+            bool AddLine(string str, bool addAlways); //return false если панель полная
+            void Restore();
+            Txt_Surface FindPanel(Func<ITextSurf, bool> f);
         }
 
-        public class Txt_Surface : Txt_null, ITextSurf
+        public class Txt_Surface : ITxt_null, ITextSurf
         {
             public readonly IMyTextSurface Surface;
             private readonly IMyTerminalBlock ownerBloc;
             private readonly int index = 0;
+            public Txt_Panel Owner { get; set; }
 
             public IMyTerminalBlock OwnerBloc => ownerBloc;
             public int Index => index;
@@ -105,9 +103,8 @@ namespace ConsoleApp_sharp
                 Surface = block.GetSurface(this.index = index);
                 Surface.ContentType = ContentType.TEXT_AND_IMAGE;
             }
-            public override string ToString(bool isSave = false)
-            => isSave ? $"{ownerBloc.EntityId}[{index}]" : $"{ownerBloc.CustomName.ToParam()} [{index}]";
-            public override bool AddLine(string str, bool addAlways = true)
+            public override string ToString() => $"{ownerBloc.CustomName} /{index}";
+            public bool AddLine(string str, bool addAlways = true)
             {
                 if (addAlways) return Surface.WriteText(str + "\n", true);
 
@@ -120,40 +117,32 @@ namespace ConsoleApp_sharp
                 Surface.WriteText(str + "\n");
                 return true;
             }
-            public override void Restore() { Surface.WriteText(string.Empty); }
-            public override Txt_Surface FindPanel(Func<ITextSurf, bool> f)
-            => f(this) ? this : null;
-
-            public override MyTree Save(MyTree res)
+            public void Restore() { Surface.WriteText(string.Empty); }
+            public Txt_Surface FindPanel(Func<ITextSurf, bool> f) => f(this) ? this : null;
+            public virtual MyTree Save(MyTree res = null)
             {
                 if (res == null) res = new MyTree();
-                res.Value = ToString(true);
+                res.Name = ownerBloc.EntityId.ToString();
+                res.Param = index.ToString();
                 return res;
             }
         }
 
-        public class txt_Surface_ : Txt_Surface
+        public class Txt_Surface_ : Txt_Surface
         {
             public new readonly MySurface Surface;
             public new readonly string OwnerBloc;
             public readonly int index = 0;
 
-            public int Index => index;
-
-            // IMyTerminalBlock ITextSurf.OwnerBloc => throw new NotImplementedException();
-
-            public txt_Surface_(string block, int lines, int index = 0):base(null, 0)
+            public Txt_Surface_(string block, int lines, int index = 0) : base(null, 0)
             {
                 OwnerBloc = block;
                 Surface = new MySurface(lines);
                 this.index = index;
             }
-            public override string ToString(bool isSave = false)
-            {
-                if (!isSave) return $"{OwnerBloc} [{index}]\n{Surface.ToString()}";
-                return $"{OwnerBloc.ToParam()}[{index}]";
-            }
-            public override bool AddLine(string str, bool addAlways = true)
+            public override string ToString() => $"{OwnerBloc} [{index}]\n{Surface}";
+
+            public new bool AddLine(string str, bool addAlways = true)
             {
                 if (addAlways) return Surface.WriteText(str + "\n", true);
 
@@ -166,128 +155,103 @@ namespace ConsoleApp_sharp
                 Surface.WriteText(str + "\n");
                 return true;
             }
-            public override void Restore() { Surface.WriteText(string.Empty); }
-            // public override Txt_Surface FindPanel(Func<ITextSurf, bool> f) => this;
+            public new void Restore() { Surface.WriteText(string.Empty); }
+            public override MyTree Save(MyTree res = null)
+            {
+                if (res == null) res = new MyTree();
+                res.Name = OwnerBloc;
+                res.Param = index.ToString();
+                return res;
+            }
         }
-
-        public class Txt_Panel : Txt_null, ISaving
+        public class Txt_Panel : List<ITxt_null>, ITxt_null
         {
-            List<Txt_null> flats { get; } = new List<Txt_null>();
-            public List<Txt_null> Flats => flats;
             public bool hor;
             int _tec = 0;
-            public Txt_Panel(bool horizontal, List<Txt_null> list = null)
-            { hor = horizontal; if (list != null) flats = list; }
-            public override string ToString(bool isSave = false)
+            public Txt_Panel Owner { get; set; }
+            public Txt_Panel(bool horizontal, List<ITxt_null> list = null)
+            { hor = horizontal; if (list != null) base.AddRange(list); }
+            public override string ToString()
             {
-                var tmp = new List<string>(flats.Count);
-                flats.ForEach(x => tmp.Add(x.ToString(isSave)));
-                return $"{{{string.Join(", ", tmp)}:{(isSave ? (hor ? "+" : "-") : (hor ? "Horizontal" : "Vertical"))}}}";
+                var tmp = new List<string>(Count);
+                ForEach(x => tmp.Add(x.ToString()));
+                return $"{{{string.Join(", ", tmp)}:{(hor ? "Horizontal" : "Vertical")}}}";
             }
+            public new void Add(ITxt_null val) { val.Owner = this; base.Add(val); }
 
-            public bool IsEnd() => _tec > flats.Count;
+            public bool IsEnd() => _tec > Count;
             //Сдвигается к следующей позиции, возвращает истина если оказывается на последней позиции
             bool Next(bool to_round = false)
-            => (!IsEnd() || to_round) && (++_tec < flats.Count) || ((_tec = 0) == 0);
+            => (!IsEnd() || to_round) && (++_tec < Count) || ((_tec = 0) == 0);
 
-            public override bool AddLine(string str, bool addAlways = true)
+            public bool AddLine(string str, bool addAlways = true)
             {
-                if (flats.Count == 0) return false;
+                if (Count == 0) return false;
                 return hor ? AddLineHor(str, addAlways) : AddLineVert(str, addAlways);
             }
 
             bool AddLineHor(string str, bool addAlways)
             {
-                var t = flats.Count;
+                var t = Count;
                 bool f = false;
                 while (t-- > 0 && !f)
                 {
-                    if (!(f = flats[_tec].AddLine(str, false)))
+                    if (!(f = this[_tec].AddLine(str, false)))
                         f = Next(true);
                 }
                 if (!f && addAlways)
-                    flats[flats.Count - 1].AddLine(str, true);
+                    this[Count - 1].AddLine(str, true);
                 return f;
             }
 
             bool AddLineVert(string str, bool addAlways)
             {
-                bool f1 = false, fl = addAlways && IsEnd();
-                while (!(f1 = flats[_tec].AddLine(str, fl) || !IsEnd()))
+                bool f1, fl = addAlways && IsEnd();
+                while (!(f1 = this[_tec].AddLine(str, fl) || !IsEnd()))
                     fl = Next(false) && addAlways;
 
                 return f1;
             }
 
-            public override void Restore() { _tec = 0; flats.ForEach(x => x.Restore()); }
-            public delegate void FndPanel(List<Txt_null> list, string pan, int index);
-            public override Txt_Surface FindPanel(Func<ITextSurf, bool> f)
+            public void Restore() { _tec = 0; ForEach(x => x.Restore()); }
+
+            public Txt_Surface FindPanel(Func<ITextSurf, bool> f)
             {
                 Txt_Surface p = null;
-                flats.FindIndex(x => (p = x.FindPanel(f)) != null);
+                FindIndex(x => (p = x.FindPanel(f)) != null);
                 return p;
             }
-            public override MyTree Save(MyTree res = null)
+            public MyTree Save(MyTree res = null)
             {
                 if (res == null) res = new MyTree();
-                res.Value = hor.ToString();
-                int n = 0;
-                Flats.ForEach(x => res.Add(x.Save()));
+                res.Param = hor.ToString();
+                ForEach(x => res.Add(x.Save()));
                 return res;
             }
-            public static string TryParse(Txt_Panel res, String val, ref int pos, FndPanel activ)
+            public static string TryParse(Txt_Panel res, MyTree val, Action<List<ITxt_null>, string, int> GetSurf)
             {
-                int ind = 0, start = pos;
+                var p = new Txt_Panel(false);
+                if (!bool.TryParse(val.Param, out p.hor)) return "Ошибка преобразования логического значения";
 
-
-                if (val.Skip(start).First(x => x != ' ' || ++start == 0) != '{')
-                { pos = start; return "Ожидается '{' в начале"; }
-
-                //if(res == null) res = new txt_Panel(new List<txt_null>());
-                do
+                string er;
+                foreach (var x in val)
                 {
-                    start++;
-                    if (val.Skip(start).First(x => x != ' ' || ++start == 0) == '{')
+                    if (x.Count > 0)
                     {
-                        var p = new Txt_Panel(false);
-                        var r = TryParse(p, val, ref start, activ);
-                        pos = ++start;
-                        if (p == null) return r;
-                        res.flats.Add(p);
+                        er = Txt_Panel.TryParse(p, x, GetSurf);
+                        if (er != null) return er;
                         continue;
                     }
-
-                    var name = val.GetParam(ref start, ',', '[', ':');
-                    if (string.IsNullOrEmpty(name)) { pos = start; return "Ожидается название панели"; }
-
-                    if (val[start] == '[')
-                    { start++; ind = val.GetParam(ref start, ']').AsInt(0); start++; }
-
-                    activ(res.flats, name, ind);
-                } while (start < val.Length && val.Skip(start).First(x => x != ' ' || ++start == 0) == ',');
-
-                ind = start;
-                start = val.IndexOf('}', start);
-                if (start < 0) { pos = ind; return "Ожидается '}'"; }
-
-                if (val[ind] == ':')
-                    res.hor = val.Skip(++ind).First(x => x != ' ' || ++start == 0) == '1';
-
-                pos = start;
+                    GetSurf(p, x.Name, int.Parse(x.Param));
+                }
+                res.Add(p);
                 return null;
             }
         }
-
-
-        public class Selected_Panel<T, T2> : Txt_Panel, ISaving
+        public class Selected_Panel<T, T2> : Txt_Panel
         {
             public T Select;
-            public Selected_Panel(T sel) : base(false)
-            {
-                if (!(sel is ISaving))
-                    throw new Exception("Недопустимый тип наследования для Selected_Panel");
-                Select = sel;
-            }
+            public Selected_Panel(T sel) : base(false) { Select = sel; }
 
             public bool AddLine(T2 sel, string str)
             {
@@ -295,19 +259,26 @@ namespace ConsoleApp_sharp
                 if (fl) base.AddLine(str);
                 return fl;
             }
-            public override string ToString(bool isSave = false)
-            => $"{(Select as ISaving).ToString().ToParam('{')}{base.ToString(isSave)}";
-            public new MyTree Save(MyTree res)
+            public override string ToString() => $"{Select}{base.ToString()}";
+
+            public static Selected_Panel<T, T2> Parse(MyTree val, Func<MyTree, T> GetSel, Action<List<ITxt_null>, string, int> GetTxt)
             {
-                if (res == null) res = new MyTree(); 
-                res.Add("Select", (Select as ISaving).Save());
-                res.Add("Surfase", new MyTree());
-                base.Save(res.Last());
+                var tmp = val.FirstOrDefault(x => x.Name.Equals("Select", StringComparison.OrdinalIgnoreCase));
+                if (tmp == null) throw new Exception("Не найден сектор Select");
+
+                var sl = GetSel(tmp);
+                if (sl == null) throw new Exception("Не удалось восстановить Select в Selected_Panel");
+
+                tmp = val.FirstOrDefault(x => x.Name.Equals("Surface", StringComparison.OrdinalIgnoreCase));
+                if (tmp == null) throw new Exception("Не найден сектор Surface");
+
+                var res = new Selected_Panel<T, T2>(sl);
+                var er = Txt_Panel.TryParse(res, tmp, GetTxt);
+                if (er != null) throw new Exception(er);
                 return res;
             }
         }
-
-        public class TextOut<T, T2> : List<Selected_Panel<T, T2>>, ISaving
+        public class TextOut<T, T2> : List<Selected_Panel<T, T2>>
         {
             public StringBuilder DefList = new StringBuilder();
             public void AddLine(T2 sel, string str, bool skipped = false)
@@ -318,47 +289,32 @@ namespace ConsoleApp_sharp
             public void AddLine(string Val) => DefList.Append(Val);
             public bool IsSpec(T2 sel) => FindIndex(x => x.Select.Equals(sel)) >= 0;
             public void Restore() { DefList.Clear(); ForEach(x => x.Restore()); }
-            public string ToString(bool isSave = false)
-            {
-                List<string> res = new List<string>(Count);
-                ForEach(x => res.Add(x.ToString(isSave)));
-                return string.Join(isSave ? "," : "\n", res);
-            }
             public Txt_Surface FindPanel(Func<ITextSurf, bool> f)
             {
                 Txt_Surface p = null;
                 FindIndex(x => (p = x.FindPanel(f)) != null);
                 return p;
             }
-            public string TryParse(string val, ref int pos, Func<string, T> Parse, Txt_Panel.FndPanel findPanel)
+            public MyTree Save(MyTree res = null)
             {
-                int start = pos - 1;
-                var list = new List<Selected_Panel<T, T2>>();
-                do
-                {
-                    start++;
-                    var tm = new Selected_Panel<T, T2>(Parse(val.GetParam(ref start, '{')));
-                    if (FindIndex(x => x.Equals(tm.Select)) >= 0)
-                    { pos = start; return "Дублирование отбора в списке" + tm.Select.ToString(); }
-                    if (list.FindIndex(x => x.Equals(tm.Select)) >= 0)
-                    { pos = start; return "Дублирование отбора в шаблоне " + tm.Select.ToString(); }
-
-                    if (val.Skip(start).First(x => x != ' ' || ++start == 0) != '{')
-                    { pos = start; return "Ожидается '{' в начале"; }
-
-                    var er = Txt_Panel.TryParse(tm, val, ref start, findPanel);
-                    if (er != null) { pos = start; return er; }
-                    list.Add(tm);
-                } while (++start < val.Length && val.Skip(start).First(x => x != ' ' || ++start == 0) == ',');
-
-                AddRange(list);
-                return null;
-            }
-            public MyTree Save(MyTree res)
-            {
-                if (res == null) res = new MyTree(); int n = 0;
-                ForEach(x => res.Add(n++.ToString(), x.Save(null)));
+                if (res == null) res = new MyTree();
+                ForEach(x => res.Add(x.Save()));
                 return res;
+            }
+            public bool Load(MyTree res, Func<MyTree, T> GetSel, Action<List<ITxt_null>, string, int> GetPan)
+            {
+                Selected_Panel<T, T2> tm;
+                res.ForEach(x => {
+                    if ((tm = Selected_Panel<T, T2>.Parse(x, GetSel, GetPan)) != null)
+                        Add(tm);
+                });
+                return true;
+            }
+            public string ToString(bool isSave = false)
+            {
+                List<string> res = new List<string>(Count);
+                ForEach(x => res.Add(x.ToString()));
+                return string.Join(isSave ? "," : "\n", res);
             }
         }
 
@@ -383,7 +339,7 @@ namespace ConsoleApp_sharp
             public override string ToString()
             => $"{(invert ? "!" : "")}{(Name)}";
             public string ToString(bool isSave)
-             => isSave ? $"{(invert ? "+" : "-")}{Type:000}{Name}" : ToString();
+             => isSave ? $"{(invert ? "!" : "+")}{Name}{Type:000}" : ToString();
         }
 
         public class Sel_Group : List<Sel_Item>, ISaving
@@ -418,160 +374,83 @@ namespace ConsoleApp_sharp
             }
             public MyTree Save(MyTree res)
             {
-                if(res==null) res = new MyTree();
-                int n = 0;
+                if (res == null) res = new MyTree();
                 ForEach(x => res.Add(new MyTree(x.ToString(true))));
-                return res;                
+                return res;
+            }
+            public static Sel_Group Parse(MyTree val)
+            {
+                var res = new Sel_Group();
+                foreach (var v in val)
+                    res.Add(FromStr(v.Param));
+                return res;
             }
             public static Sel_Group Parse(string val)
             {
                 var res = new Sel_Group();
                 var t = val.Split(',');
                 foreach (var v in t)
-                    res.Add(new Sel_Item(byte.Parse(v.Substring(1, 3)), v.Substring(4, v.Length - 4), v[0] == '+'));
+                    res.Add(FromStr(v));
                 return res;
             }
-            /*  public override int GetHashCode()
-              {
-                  int hashCode = -1591213915;
-                  hashCode = hashCode * -1521134295 + Capacity.GetHashCode();
-                  hashCode = hashCode * -1521134295 + Count.GetHashCode();
-                  return hashCode;
-              }*/
+            static Sel_Item FromStr(string v) => new Sel_Item(byte.Parse(v.Remove(0, v.Length - 3)), v.Substring(1, v.Length - 4), v[0] == '!');
+            public override int GetHashCode()=> HashCode.Combine(Capacity, Count);
         }
 
 
-
-    /*    public class MyTree_ : Dictionary<string, MyTree>
+        public class MyTree : List<MyTree>
         {
-            public string Val = null;
             public MyTree Owner = null;
-            public MyTree_() { }
-            public MyTree_(MyTree_ owner) { Owner = owner; }
-            public new void Add(string key, MyTree_ val)
-            {base.Add(key, val); if (val != null) val.Owner = this; }
-            public void Add(string key, string val)=>Add(key, new MyTree_() {Val = val });
-            public override string ToString() => (Val == null ? "" : $"{Val}:") + Count.ToString() + "...";
-            public void ForLoop(Action<KeyValuePair<string, MyTree_>, int, int> Act, int s_lev = 0, int p_lev = 0)
-            {
-                foreach (var t in this)
-                {
-                    Act(t, s_lev, p_lev);
-                    if (t.Value != null)
-                        t.Value.ForLoop(Act, s_lev + 1, t.Value.Val == null?0:p_lev+1);
-                }
-            }
-        }
-
-        public class TreeINI : MyTree_
-        {
-            public TreeINI() { }
-            public bool AddINI(string val, char chapter_sym = ' ', char name_sym = '_')
-            {
-                var pi = new MyIni();
-                if (!pi.TryParse(val)) return false;
-
-                var lk = new List<MyIniKey>();
-                var ls = new List<string>();
-                pi.GetSections(ls);
-
-                int tl, tu = 0;
-                MyTree_ tec = this, tec2;
-
-                foreach (var sel in ls)
-                {
-                    LoadPath(this, ref tec, sel, ref tu, chapter_sym);
-                    pi.GetKeys(sel, lk);
-
-                    tec2 = tec; tl = tu;
-                    lk.ForEach(x => { LoadPath(tec, ref tec2, x.Name, ref tl, name_sym); tec2.Val = pi.Get(x).ToString(); });
-                }
-                return true;
-            }
-            static void LoadPath(MyTree_ NulLevObj, ref MyTree_ tec, string sel, ref int level, char sym)
-            {
-                string name;
-                if (sel.StartsWith(sym))
-                {
-                    int n = -1;
-                    sel.First(c => ++n > 0 && c != sym);
-                    if (n > level)
-                        throw new Exception("Level error in name: " + sel);
-                    while (n < level)
-                    {
-                        if ((tec = tec.Owner) == null)
-                            throw new Exception("Error in algoritm AddINI");
-                        level--;
-                    }
-                    name = sel.Remove(0, n);
-                }
-                else { level = 0; tec = NulLevObj; name = sel; }
-
-                tec.Add(name, tec = new MyTree());
-                level++;
-            }
-            public string ToIniString(char chapter_sym = ' ', char name_sym = '_')
-            {
-                StringBuilder res = new StringBuilder();
-                ForLoop((x, l1, l2) =>
-                {
-                    if (x.Value.Val == null)
-                        res.Append("[" + new string(chapter_sym, l1) + x.Key + "]");
-                    else res.Append(new string(name_sym, l2) + x.Key + "=" + x.Value.Val);
-                    res.AppendLine();
-                });
-                return res.ToString();
-            }
-        }*/
-
-        public class MyTree:List<MyTree>
-        {   public string Value = null;
-            public MyTree Owner = null;
+            public string Name = null;
+            public string Param = null;
+            public string GetValue() => Name + (string.IsNullOrEmpty(Param) ? null : "=" + Param);
             public MyTree() { }
-            public MyTree(string val) { Value = val; }
+            public MyTree(string param) { Param = param; }
+            public MyTree(string value, bool isName)
+            {
+                if (isName) { Name = value; return; }
+                var i = value.IndexOf('=');
+                if (i >= 0)
+                {
+                    Name = value.Substring(0, i);
+                    Param = value.Substring(i + 1);
+                }
+                else Name = value;
+            }
+
             public new void Add(MyTree tree) { base.Add(tree); tree.Owner = this; }
-            public void Add(string Val, MyTree tree) 
-            { tree.Value = Val; Add(tree); }
-            public void Parse(string value, char sym_break = '\t') 
+            public void Add(string name, MyTree tree)
+            { tree.Name = name; Add(tree); }
+            public void Parse(string value, char sym_break = '\t')
             {
                 MyTree tec = this;
-                int t_lev = 1, i = 0, b=-1;
-                while (b!=i)
+                int t_lev = 1, i = 0, b = 0;
+                while (i >= 0)
                 {
-                    i = value.IndexOf('\n', b = i);
-                    if (i < 0) b = i = value.Length;
-                    var str = value.Substring(i, b - i);
-                    LoadPath(this, ref tec, str, ref t_lev, sym_break);
+                    i = value.IndexOf('\n', b);
+                    var str = value.Substring(b, (i < 0 ? value.Length : i) - b);
+                    b = i + 1;
+                    LoadPath(this, ref tec, str.TrimEnd(), ref t_lev, sym_break);
                 }
             }
             static void LoadPath(MyTree NulLevObj, ref MyTree tec, string sel, ref int level, char sym)
             {
-                string name;
                 int n = -1;
-                sel.First(c => ++n > 0 && c != sym);
+                sel.First(c => (++n) >= 0 && c != sym);
 
                 if (n > level)
                     throw new Exception("Level error in name: " + sel);
-                if( n==0 ) { level = 0; tec = NulLevObj;}
-                while (n < level ) { tec = tec.Owner; level--; }
-                if (sel[n] == '[' && sel.EndsWith(']'))
-                    name = sel.Substring(n + 1, sel.Length - n - 1);
-                else name = n == 0 ? sel : sel.Remove(0, n);
-
-                tec.Add(tec = new MyTree(name));
-                level++;
-            }
-            /*public static void LoadPath2(MyTree2 NulLevObj, ref MyTree2 tec, string name, ref int level, int n)
-            {
-
-                if (n > level)
-                    throw new Exception("Level error in name: " + name);
                 if (n == 0) { level = 0; tec = NulLevObj; }
                 while (n < level) { tec = tec.Owner; level--; }
-               
-                tec.Add(tec = new MyTree2(name));
+
+                string name;
+                if (sel[n] == '[' && sel.EndsWith(']'))
+                    name = sel.Substring(n + 1, sel.Length - n - 2);
+                else name = n == 0 ? sel : sel.Remove(0, n);
+
+                tec.Add(tec = new MyTree(name, false));
                 level++;
-            }*/
+            }
             public void ForLoop(Action<MyTree, int> Act, int s_lev = 0)
             {
                 foreach (var t in this)
@@ -585,39 +464,43 @@ namespace ConsoleApp_sharp
                 StringBuilder res = new StringBuilder();
                 ForLoop((x, l) =>
                 {
-                    if (x.Count > 0 )
-                        res.Append(new string(chapter_sym, l) + "[" + x.Value + "]");
-                    else res.Append(new string(chapter_sym, l) + x.Value);
+                    if (x.Count <= 0)
+                        res.Append(new string(chapter_sym, l) + x.GetValue());
+                    else
+                        res.Append(new string(chapter_sym, l)).Append('[').Append(x.GetValue()).Append(']');
                     res.AppendLine();
                 });
                 return res.ToString();
             }
         }
 
-        static void Main2(string[] args)
+        static void Main(string[] args)
         {
             var value = @"[PANELS]
-0=True
-_0=L1[0]
-_1=False
-__0=L2[0]
-__1=L3[0]
-[  Select]
-0=-001Группа1
-1=False
-_0=T1[0]
-_1=True
-__0=T2[0]
-__1=T3[0]
-[  Select]
-0=+005ГруппаНе5
-2=True
-_0=1[0]
-_1=2[0]
-[  Select]
-0=+007Только7";
+ []
+  [Select]
+   =+Группа1001
+  [Surface=True]
+   L1=0
+   [=False]
+    L2=0
+    L3=0
+ []
+  [Select]
+   =!ГруппаНе5005
+  [Surface=False]
+   T1=0
+   [=True]
+    T2=0
+    T3=0
+ []
+  [Select]
+   =+Только7007
+  [Surface=True]
+   1=0
+   2=0";
 
-            MyIni i = new MyIni();
+            /*MyIni i = new MyIni();
             MyIniParseResult re;
             if (!i.TryParse(value, out re)) { Console.WriteLine("Ошибка преобразования: " + re.ToString()); return; }
             /*
@@ -628,40 +511,23 @@ _1=2[0]
             Console.WriteLine(value + "\n****-************************");
 
             var t = new MyTree();
-
-            Console.WriteLine(t.ToString());
-        }        
-       
-
-        static void Main(string[] args)
-        {
-            int start = 0;
+            t.Parse(value, ' ');
             TextOut<Sel_Group, Item_sel> a = new TextOut<Sel_Group, Item_sel>();
 
+            var tmp = t.FirstOrDefault(x => x.Name.Equals("PaNELS", StringComparison.OrdinalIgnoreCase));
+            if (tmp == null) { Console.WriteLine("Нет сектора PANELS"); return; }
 
-            var er = a.TryParse("-001Группа1{ L1[0], { L2[0], L3[0]:0}:1},+005ГруппаНе5{ T1[0], { T2[0], T3[0]:1}:0},+007Только7{ 1[0], 2[0]:1}",
-                ref start, x => Sel_Group.Parse(x), (l, n, i) => l.Add(new txt_Surface_(n, 10, i)));
-            if (er != null) { Console.WriteLine(er + "\t" + start.ToString()); return; }
-            start++;
+            a.Load(tmp, Sel_Group.Parse, (l, n, i) => l.Add(new Txt_Surface_(n, 10, i)));
 
-            for (var i = 0; i < 50; i++)
-                //a.AddLine(new Item_sel((byte)(i % 10 + 1), i.ToString()), $"Str - {i}");//
-                a.AddLine(new Item_sel((byte)(i % 10 + 1)), i.ToString());
+            Console.WriteLine(a.Save().ToString(' '));
 
-            Console.WriteLine(a.ToString(false));
+            byte key = 12;
+            Console.WriteLine(key.ToString("0"));
+        }
 
-            Console.WriteLine("\n=======================================\n");
-            Console.WriteLine(a.ToString(true));
 
-            
-
-            var u = new MyTree();
-            u.Add("PANELS", a.Save());
-
-            
-            Console.WriteLine("\n=======================================\n");
-            Console.WriteLine(u.ToString());
-
+        static void Main2(string[] args)
+        {
 
             //Console.WriteLine((a.Save() as TreeINI).ToIniString());
 
@@ -712,12 +578,10 @@ _1=2[0]
             return val;
         }
 
-        public static string Begin(this string msk, char ch, bool cut = false)
+        public static string Part(this string msk, char ch, bool After = false, bool NotNull = true)
         {
-            var i = msk.IndexOf(ch);
-            string res = i < 0 ? msk : msk.Substring(0, i);
-            if (cut) msk = i < 0 ? string.Empty : msk.Substring(i + 1);
-            return res;
+            var i = (msk == null) ? -1 : msk.IndexOf(ch);
+            return i < 0 ? (NotNull ? msk : null) : After ? msk.Substring(i + 1) : msk.Substring(0, i);
         }
         public static string Substring(this string val, int ind, string to)
         {
