@@ -56,6 +56,7 @@ class Translate : Dictionary<String, string>
 
 void SetAtributes(string arg)
 {
+	Echo(MySpaceTexts.Align_Center.ToString());
 	try
 	{
 		var parms = arg.ComLine();
@@ -324,7 +325,8 @@ Program()
 			Me.CustomData += "/n" + Storage;
 		}
 	else if (string.IsNullOrEmpty(Me.CustomData))
-		Me.CustomData = @"panels,panel,panel+,panel-,?,>,limit,limit+,replay,unload,init";
+		Me.CustomData = "[PANELS]\n []\n  [Select]\n   Слитки\n  [Surface]\n   LCD_1*\n" +
+			" []\n  [Select]\n   !Руда\n  [Surface=hor]\n   LCD_2*";
 	if (TM == null) TM = new Timer(this);
 }
 
@@ -332,7 +334,7 @@ void Save()
 {
 	Storage = ToSave();
 	if (!string.IsNullOrWhiteSpace(Storage))
-		Storage = $"AutoBuild_2\n{TM.ToSave()}\n{Storage}";
+		Storage = $"AutoBuild_3\n{TM.ToSave()}\n{Storage}";
 	Me.CustomData = Storage;
 }
 
